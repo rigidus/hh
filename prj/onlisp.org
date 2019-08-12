@@ -1,0 +1,26 @@
+#+STARTUP: showall indent hidestars
+
+#+TITLE: Перевод OnLisp Пола Грэма
+
+* О проекте перевода
+
+Это проект по переводу книги OnLisp Пола Грэма. Переводим на гитхабе:
+https://github.com/rigidus/onlisp
+
+Перевод полностью открытый, мы приглашаем переводчиков и
+редакторов. Также приглашаются все, кто желает заняться вычиткой.
+
+* Переведенные главы:
+
+- 01 - The Extensible Language
+- 02 - Functions
+- 03 - Functional Programming
+- 06 - Functions as Representation
+- 22 - Nondeterminism
+
+* Текущие переводимые главы
+
+- Главу 16 - Macro-Defining Macros и 17 - Read-Macros переводит Andrew Kondratovich
+- Главы с 7 по 10 переводит Zeldan (https://github.com/Zeldan)
+- Главу 25 переводит orivej (https://github.com/orivej)
+- Главу 5 переводит irmpow (https://github.com/irmpow)
