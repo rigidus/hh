@@ -1,4 +1,4 @@
-(ql:quickload '(clx zpng))
+(ql:quickload '(clx zpng cffi cl-tesseract))
 
 (defpackage #:cl-autogui
   (:use #:common-lisp #:xlib)
@@ -20,12 +20,44 @@
            #:x-snapsearch
            #:x-getcolor))
 
-(in-package #:cl-autogui)
+(defpackage #:cl-tesseract
+  (:use #:cl #:cffi)
+  (:nicknames #:tesseract #:tess)
+  (:export
+   #:*tessdata-directory*
+   #:tesseract-version
+   #:with-base-api
+   #:init-tess-api
+   #:process-pages
+   #:image-to-text
+   #:image-to-hocr))
+
+;; создание текущего пакета для того, чтоб не было необходимости переключаться между
+;; cl-tesseract и cl-autogui
+(defpackage #:cur-pac
+  (:use #:common-lisp #:xlib #:cl-autogui
+        :cl-tesseract))
+
+(in-package #:cur-pac)
+
+(cffi:define-foreign-library tesseract
+    (:darwin (:or "libtesseract.3.dylib" "libtesseract.dylib"))
+  (:linux (:or "libtesseract.3.so" "libtesseract.so"))
+  (t (:default "libtesseract")))
+
+(cffi:use-foreign-library tesseract)
+
+(defparameter *tess-pathname* (make-pathname :name "snap.png"))
+(defparameter *tessdata-directory*
+  #+unix
+  (namestring (or (probe-file "/home/repo/org/cl-dino-master/snap.png")
+                  (probe-file *tess-pathname*))))
 
 (defparameter *default-heght* 670)
 (defparameter *default-x* 60)
 (defparameter *default-y* 37)
 (defparameter *default-width* 1295)
+
 (defmacro with-display (host (display screen root-window) &body body)
   `(let* ((,display (xlib:open-display ,host))
           (,screen (first (xlib:display-roots ,display)))
@@ -103,6 +135,8 @@
                     (t (error "Only PNG file is supported"))))
                 (zpng:data-array image)))))
 
+
 (block test
+  (tess:tesseract-version)
   (with-display "" (display screen root-window)
   (x-snapshot :path "snap.png")))
