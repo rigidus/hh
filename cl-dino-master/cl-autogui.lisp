@@ -20,42 +20,23 @@
            #:x-snapsearch
            #:x-getcolor))
 
-(defpackage #:cl-tesseract
-  (:use #:cl #:cffi)
-  (:nicknames #:tesseract #:tess)
-  (:export
-   #:*tessdata-directory*
-   #:tesseract-version
-   #:with-base-api
-   #:init-tess-api
-   #:process-pages
-   #:image-to-text
-   #:image-to-hocr))
-
-(in-package #:cl-tesseract)
-;; создание текущего пакета для того, чтоб не было необходимости переключаться между
-;; cl-tesseract и cl-autogui
-(defpackage #:cur-pac
-  (:use #:common-lisp #:xlib #:cl-autogui
-        :cl-tesseract))
-
-(in-package #:cur-pac)
-
-(cffi:define-foreign-library tesseract
-    (:darwin (:or "libtesseract.3.dylib" "libtesseract.dylib"))
-  (:linux (:or "libtesseract.3.so" "libtesseract.so"))
-  (t (:default "libtesseract")))
-
-(cffi:use-foreign-library tesseract)
 
 
-(defparameter *tess-pathname* (make-pathname :name "snap.png"))
-(defparameter *tessdata-directory*
-  #+unix
-  (namestring (or (probe-file "/home/repo/org/cl-dino-master/snap.png")
-                  (probe-file *tess-pathname*))))
+(handler-bind ((type-error
+                #'(lambda (c)
+                    (declare (ignore c))
+                    ;; (print (compute-restarts))
+                    (invoke-restart 'ASDF/ACTION:ACCEPT))))
+  (ql:quickload "cl-tesseract"))
 
-(tess:tesseract-version)
+(defparameter cl-tesseract::*tessdata-directory*
+  (namestring
+   (probe-file
+          "/usr/share/tesseract-ocr/tessdata/")))
+(print
+ (cl-tesseract:image-to-text #P"~/repo/org/cl-dino-master/snap.png":lang "rus+eng"))
+
+(defparameter *image-pathname* (make-pathname :name "snap.png"))
 (defparameter *default-heght* 670)
 (defparameter *default-x* 60)
 (defparameter *default-y* 37)
