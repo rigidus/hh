@@ -39,17 +39,20 @@
 (defparameter cl-tesseract::*tessdata-directory*
   (namestring
    (probe-file
-          "/usr/share/tesseract-ocr/tessdata/")))
+    "/usr/share/tesseract-ocr/tessdata/")))
 
 (print
- (cl-tesseract:image-to-text #P"~/repo/org/cl-dino-master/photo.jpg"
-                             :lang "eng"))
+ (cl-tesseract:image-to-text #P"~/repo/org/cl-dino-master/scr.png"
+                          :lang "eng"))
 
 (defparameter *image-pathname* (make-pathname :name "snap.png"))
 (defparameter *default-heght* 670)
 (defparameter *default-x* 60)
 (defparameter *default-y* 37)
 (defparameter *default-width* 1295)
+(defparameter *mouse-left* 1)
+(defparameter *mouse-middle* 2)
+(defparameter *mouse-right* 3)
 
 (defmacro with-display (host (display screen root-window) &body body)
   `(let* ((,display (xlib:open-display ,host))
@@ -95,30 +98,29 @@
       (error "Integer only for position, (x: ~S, y: ~S)" x y)))
 
 (defun mklist (obj)
-(if (and
-     (listp obj)
-     (not (null obj)))
-    obj (list obj)))
+  (if (and
+       (listp obj)
+       (not (null obj)))
+      obj (list obj)))
 
 (defmacro defun-with-actions (name params actions &body body)
-;;     "This macro defun a function which witch do mouse or keyboard actions,
-;; body is called on each action."
-    `(defun ,name ,params
-       (mapcar
-        #'(lambda (action)
-            ,@body)
-        (mklist ,actions))))
+  ;;     "This macro defun a function which witch do mouse or keyboard actions,
+  ;; body is called on each action."
+  `(defun ,name ,params
+     (mapcar
+      #'(lambda (action)
+          ,@body)
+      (mklist ,actions))))
 
 (defun perform-mouse-action (press? button &key x y)
-(and x y (x-move x y))
-(with-default-display-force (d)
-  (xlib/xtest:fake-button-event d button press?)))
-
+  (and x y (x-move x y))
+  (with-default-display-force (d)
+    (xtest:fake-button-event d button press?)))
 
 (macrolet ((def (name actions)
              `(defun-with-actions ,name
                   (&key (button 1) x y)
-                ,actions
+                  ,actions
                 (funcall #'perform-mouse-action
                          action button :x x :y y))))
   (def x-mouse-down t)
@@ -147,7 +149,6 @@
   (with-default-display-force (d)
     (xtest:fake-key-event d keycode press?)))
 
-;;(perform-key-action t 65)
 (macrolet ((def (name actions)
              `(defun-with-actions ,name (keycode)
                   ,actions
@@ -172,80 +173,85 @@
 
 (multiple-value-bind (default-width default-height) (x-size)
 
-(defun x-snapshot (&key (x *default-x*) (y *default-y*)
+  (defun x-snapshot (&key (x *default-x*) (y *default-y*)
                        (width  *default-width*) (height *default-heght*)
                        (delay 0)
-                        path)
-;;         "Return RGB data array (The dimensions correspond to the height, width,
-;; and pixel components, see comments in x-snapsearch for more details),
-;; or write to file (PNG only), depend on if you provide the path keyword"
-        (sleep delay)
-        (with-default-window (w)
-          (let ((image
-                 (raw-image->png
-                  (get-raw-image w :x x :y y
-                                 :width width :height height
-                                 :format :z-pixmap)
-                  width height)))
-            (if path
-                (let* ((ext (pathname-type path))
-                       (path
-                        (if ext
-                            path
-                            (concatenate 'string path ".png")))
-                       (png? (or (null ext) (equal ext "png"))))
-                  (cond
-                    (png? (zpng:write-png image path))
-                    (t (error "Only PNG file is supported"))))
-                (zpng:data-array image)))))
-
-;; (block test
-;;   (with-display "" (display screen root-window)
-;;   (x-snapshot :path "snap.png")))
-
-(defun x-find-color (rgba &key (x 0) (y 0)
-                            (width default-width) (height default-height)
-                            (test #'equal)
-                            (data (x-snapshot :x x :y y :width width :height height)))
-  ;;"Search screen for specific Color (PNG's RGBA mode, where 'A' should be 0~255)"
-  (labels ((get-rgba (data x y)
-             (mapcar
-              #'(lambda (i) (aref data y x i))
-              ;; why reversed order? http://xach.com/lisp/zpng/#data-array
-              ;; what is row-major? https://goo.gl/eF1F28
-              '(0 1 2 3))))
-    (dotimes (s-x width)
-      (dotimes (s-y height)
-        (when (funcall test rgba (get-rgba data s-x s-y))
-          (return-from x-find-color (list (+ x s-x) (+ y s-y)))))))))
-
-(defun pixel->color (image-data x y)
-  (funcall
-   #'(lambda (data) (mapcar
-                     #'(lambda (i) (aref data y x i))
-                     '(0 1 2 3)))
-   image-data))
-
-(defun x-get-color (&rest coordinates)
-;;  "Get colors by coordinates"
-  (with-default-window (w)
-    (let* ((x-list (mapcar #'(lambda (c) (car c)) coordinates))
-           (y-list (mapcar #'(lambda (c) (cadr c)) coordinates))
-           (min-x (apply #'min x-list))
-           (max-x (apply #'max x-list))
-           (min-y (apply #'min y-list))
-           (max-y (apply #'max y-list))
-           (width (1+ (- max-x min-x)))
-           (height (1+ (- max-y min-y)))
-           (x min-x)
-           (y min-y)
-           (image-data
-            (zpng:data-array
+                       path)
+    ;;         "Return RGB data array (The dimensions correspond to the height, width,
+    ;; and pixel components, see comments in x-snapsearch for more details),
+    ;; or write to file (PNG only), depend on if you provide the path keyword"
+    (sleep delay)
+    (with-default-window (w)
+      (let ((image
              (raw-image->png
               (get-raw-image w :x x :y y
                              :width width :height height
                              :format :z-pixmap)
-              width height))))
-      (mapcar #'(lambda (cod)
-                  (pixel->color image-data (- (car cod) x) (- (cadr cod) y)))
-                            coordinates))))
+              width height)))
+        (if path
+            (let* ((ext (pathname-type path))
+                   (path
+                    (if ext
+                        path
+                        (concatenate 'string path ".png")))
+                   (png? (or (null ext) (equal ext "png"))))
+              (cond
+                (png? (zpng:write-png image path))
+                (t (error "Only PNG file is supported"))))
+            (zpng:data-array image)))))
+  )
+
+(block test
+  (perform-mouse-action t *mouse-left* :x 30 :y 450)
+  (sleep .1)
+  (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+  ;;(with-display "" (display screen root-window)
+  (sleep 1)
+  (x-snapshot :path "snap.png"))
+
+;; (defun x-find-color (rgba &key (x 0) (y 0)
+;;                             (width default-width) (height default-height)
+;;                             (test #'equal)
+;;                             (data (x-snapshot :x x :y y :width width :height height)))
+;;   ;;"Search screen for specific Color (PNG's RGBA mode, where 'A' should be 0~255)"
+;;   (labels ((get-rgba (data x y)
+;;              (mapcar
+;;               #'(lambda (i) (aref data y x i))
+;;               ;; why reversed order? http://xach.com/lisp/zpng/#data-array
+;;               ;; what is row-major? https://goo.gl/eF1F28
+;;               '(0 1 2 3))))
+;;     (dotimes (s-x width)
+;;       (dotimes (s-y height)
+;;         (when (funcall test rgba (get-rgba data s-x s-y))
+;;           (return-from x-find-color (list (+ x s-x) (+ y s-y)))))))))
+
+;; (defun pixel->color (image-data x y)
+;;   (funcall
+;;    #'(lambda (data) (mapcar
+;;                      #'(lambda (i) (aref data y x i))
+;;                      '(0 1 2 3)))
+;;    image-data))
+
+;; (defun x-get-color (&rest coordinates)
+;; ;;  "Get colors by coordinates"
+;;   (with-default-window (w)
+;;     (let* ((x-list (mapcar #'(lambda (c) (car c)) coordinates))
+;;            (y-list (mapcar #'(lambda (c) (cadr c)) coordinates))
+;;            (min-x (apply #'min x-list))
+;;            (max-x (apply #'max x-list))
+;;            (min-y (apply #'min y-list))
+;;            (max-y (apply #'max y-list))
+;;            (width (1+ (- max-x min-x)))
+;;            (height (1+ (- max-y min-y)))
+;;            (x min-x)
+;;            (y min-y)
+;;            (image-data
+;;             (zpng:data-array
+;;              (raw-image->png
+;;               (get-raw-image w :x x :y y
+;;                              :width width :height height
+;;                              :format :z-pixmap)
+;;               width height))))
+;;       (mapcar #'(lambda (cod)
+;;                   (pixel->color image-data (- (car cod) x) (- (cadr cod) y)))
+;;                             coordinates))))
