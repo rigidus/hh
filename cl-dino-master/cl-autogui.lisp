@@ -30,28 +30,49 @@
 (in-package  #:cl-autogui)
 
 (block test
-(defparameter *out-pathname* (make-pathname :name "out.txt"))
+  (defparameter *out-pathname* (make-pathname :name "out.txt"))
 
-(defmacro with-run-vfm ()
-  ;; открываем файл на запись
-  `(with-open-file (file *out-pathname* :direction :output
-                         :if-exists :supersede)
-     ;; запускаем тесеракт
-     (let* ((proc (sb-ext:run-program "/usr/bin/tesseract"
-                                    '("/home/sonja/repo/org/cl-dino-master/life.png"
-                                      "/home/sonja/repo/org/cl-dino-master/out")
-                                    :input :stream :output :stream)))
-       (if proc
-       ;; открываем поток тесеракта на чтение
-       (with-open-stream (input (sb-ext:process-input proc))
-         ;; открыли поток тесеракта на запись
-         (with-open-stream (output (sb-ext:process-output proc))
-           ;; принудительно очищаем input
-           (force-output input)
-           (format file "~A" (read input))))
-       (format t "~% didn't run tesseract")))))
+  (defmacro with-run-vfm ()
+    ;; открываем файл на запись
+    `(with-open-file (file *out-pathname* :direction :output
+                           :if-exists :supersede)
+       ;; запускаем тесеракт
+       (let ((proc (sb-ext:run-program "/usr/bin/tesseract"
+                                       '("/home/sonja/repo/org/cl-dino-master/life.png"
+                                         "/home/sonja/repo/org/cl-dino-master/out")
+                                       :input :stream :output :stream)))
+         (if proc
+             ;; открываем поток тесеракта на чтение
+             (with-open-stream (input (sb-ext:process-input proc))
+               ;; открыли поток тесеракта на запись
+               (with-open-stream (output (sb-ext:process-output proc))
+                 ;; принудительно очищаем input
+                 ;; (force-output input)
+                 ;; (format file "~A" (read input))))
+                 (do ((line (read-line input nil 'eof)
+                            (read-line input nil 'eof)))
+                     ((eql line 'eof))
+                   (format file "~A" line))))
+             (format t "~% didn't run tesseract")))))
 
-(with-run-vfm))
+  (with-run-vfm))
+
+;; пробую записать данные из одного файла в другой (получилось)
+(block test
+  (defparameter *from-pathname* (make-pathname :name "from.txt"))
+  (defparameter *to-pathname* (make-pathname :name "to.txt"))
+
+  (defun test (from to)
+    (with-open-file (source from :direction :input)
+      (with-open-file (receiver to :direction :output
+                                :if-exists :supersede)
+        (do ((line (read-line source nil 'eof)
+                   (read-line source nil 'eof)))
+            ((eql line 'eof))
+          (format receiver "~A" line)))))
+
+  (test *from-pathname* *to-pathname*))
+
 
 
 (defparameter *image-pathname*
