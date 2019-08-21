@@ -29,23 +29,33 @@
 
 (in-package  #:cl-autogui)
 
-(handler-bind ((type-error
-                #'(lambda (c)
-                    (declare (ignore c))
-                    ;; (print (compute-restarts))
-                    (invoke-restart 'ASDF/ACTION:ACCEPT))))
-  (ql:quickload "cl-tesseract"))
+(block test
+(defparameter *out-pathname* (make-pathname :name "out.txt"))
 
-(defparameter cl-tesseract::*tessdata-directory*
-  (namestring
-   (probe-file
-    "/usr/share/tesseract-ocr/tessdata/")))
+(defmacro with-run-vfm ()
+  ;; открываем файл на запись
+  `(with-open-file (file *out-pathname* :direction :output
+                         :if-exists :supersede)
+     ;; запускаем тесеракт
+     (let* ((proc (sb-ext:run-program "/usr/bin/tesseract"
+                                    '("/home/sonja/repo/org/cl-dino-master/life.png"
+                                      "/home/sonja/repo/org/cl-dino-master/out")
+                                    :input :stream :output :stream)))
+       (if proc
+       ;; открываем поток тесеракта на чтение
+       (with-open-stream (input (sb-ext:process-input proc))
+         ;; открыли поток тесеракта на запись
+         (with-open-stream (output (sb-ext:process-output proc))
+           ;; принудительно очищаем input
+           (force-output input)
+           (format file "~A" (read input))))
+       (format t "~% didn't run tesseract")))))
 
-(print
- (cl-tesseract:image-to-text #P"~/repo/org/cl-dino-master/scr.png"
-                          :lang "eng"))
+(with-run-vfm))
 
-(defparameter *image-pathname* (make-pathname :name "snap.png"))
+
+(defparameter *image-pathname*
+  "/home/sonja/repo/org/cl-dino-master/life.jpg")
 (defparameter *default-heght* 670)
 (defparameter *default-x* 60)
 (defparameter *default-y* 37)
@@ -205,53 +215,5 @@
   (perform-mouse-action t *mouse-left* :x 30 :y 450)
   (sleep .1)
   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
-  ;;(with-display "" (display screen root-window)
   (sleep 1)
   (x-snapshot :path "snap.png"))
-
-;; (defun x-find-color (rgba &key (x 0) (y 0)
-;;                             (width default-width) (height default-height)
-;;                             (test #'equal)
-;;                             (data (x-snapshot :x x :y y :width width :height height)))
-;;   ;;"Search screen for specific Color (PNG's RGBA mode, where 'A' should be 0~255)"
-;;   (labels ((get-rgba (data x y)
-;;              (mapcar
-;;               #'(lambda (i) (aref data y x i))
-;;               ;; why reversed order? http://xach.com/lisp/zpng/#data-array
-;;               ;; what is row-major? https://goo.gl/eF1F28
-;;               '(0 1 2 3))))
-;;     (dotimes (s-x width)
-;;       (dotimes (s-y height)
-;;         (when (funcall test rgba (get-rgba data s-x s-y))
-;;           (return-from x-find-color (list (+ x s-x) (+ y s-y)))))))))
-
-;; (defun pixel->color (image-data x y)
-;;   (funcall
-;;    #'(lambda (data) (mapcar
-;;                      #'(lambda (i) (aref data y x i))
-;;                      '(0 1 2 3)))
-;;    image-data))
-
-;; (defun x-get-color (&rest coordinates)
-;; ;;  "Get colors by coordinates"
-;;   (with-default-window (w)
-;;     (let* ((x-list (mapcar #'(lambda (c) (car c)) coordinates))
-;;            (y-list (mapcar #'(lambda (c) (cadr c)) coordinates))
-;;            (min-x (apply #'min x-list))
-;;            (max-x (apply #'max x-list))
-;;            (min-y (apply #'min y-list))
-;;            (max-y (apply #'max y-list))
-;;            (width (1+ (- max-x min-x)))
-;;            (height (1+ (- max-y min-y)))
-;;            (x min-x)
-;;            (y min-y)
-;;            (image-data
-;;             (zpng:data-array
-;;              (raw-image->png
-;;               (get-raw-image w :x x :y y
-;;                              :width width :height height
-;;                              :format :z-pixmap)
-;;               width height))))
-;;       (mapcar #'(lambda (cod)
-;;                   (pixel->color image-data (- (car cod) x) (- (cadr cod) y)))
-;;                             coordinates))))
