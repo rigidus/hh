@@ -29,6 +29,38 @@
 
 (in-package  #:cl-autogui)
 
+;; тест получения скриншота
+  (block test
+    (perform-mouse-action t *mouse-left* :x 30 :y 450)
+    (sleep .1)
+    (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+    (sleep 1)
+    (x-snapshot :path "snap.png"))
+
+;; тест конвертирования изображения
+(block test
+  (let ((proc (sb-ext:run-program "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/convert"
+                                  '("-resize"
+                                    "1024X768"
+                                    "/home/sonja/repo/org/cl-dino-master/test.png"
+                                    "/home/sonja/repo/org/cl-dino-master/test-src.png")
+                                  :input :stream :output :stream)))
+    (if proc
+        ;; открываем поток тесеракта на чтение
+        (with-open-stream (input (sb-ext:process-input proc))
+          ;; открыли поток тесеракта на запись
+          (with-open-stream (output (sb-ext:process-output proc))
+            ;; принудительно очищаем input
+            ;; (force-output input)
+            ;; (format file "~A" (read input))))
+            (do ((line (read-line output nil 'eof)
+                       (read-line output nil 'eof)))
+                ((eql line 'eof))
+              (format t "~A" line)
+              (force-output output))))
+        (format t "~% didn't run imageMagic"))))
+
+;; тест тесеракта
 (block test
   (defparameter *out-pathname* (make-pathname :name "out.txt"))
 
@@ -38,7 +70,7 @@
                            :if-exists :supersede)
        ;; запускаем тесеракт
        (let ((proc (sb-ext:run-program "/usr/bin/tesseract"
-                                       '("/home/sonja/repo/org/cl-dino-master/life.png"
+                                       '("/home/sonja/repo/org/cl-dino-master/life.jpg"
                                          "/home/sonja/repo/org/cl-dino-master/out")
                                        :input :stream :output :stream)))
          (if proc
@@ -49,31 +81,14 @@
                  ;; принудительно очищаем input
                  ;; (force-output input)
                  ;; (format file "~A" (read input))))
-                 (do ((line (read-line input nil 'eof)
-                            (read-line input nil 'eof)))
+                 (do ((line (read-line output nil 'eof)
+                            (read-line output nil 'eof)))
                      ((eql line 'eof))
-                   (format file "~A" line))))
+                   (format t "~A" line)
+                   (force-output output))))
              (format t "~% didn't run tesseract")))))
 
   (with-run-vfm))
-
-;; пробую записать данные из одного файла в другой (получилось)
-(block test
-  (defparameter *from-pathname* (make-pathname :name "from.txt"))
-  (defparameter *to-pathname* (make-pathname :name "to.txt"))
-
-  (defun test (from to)
-    (with-open-file (source from :direction :input)
-      (with-open-file (receiver to :direction :output
-                                :if-exists :supersede)
-        (do ((line (read-line source nil 'eof)
-                   (read-line source nil 'eof)))
-            ((eql line 'eof))
-          (format receiver "~A" line)))))
-
-  (test *from-pathname* *to-pathname*))
-
-
 
 (defparameter *image-pathname*
   "/home/sonja/repo/org/cl-dino-master/life.jpg")
@@ -231,10 +246,3 @@
                 (t (error "Only PNG file is supported"))))
             (zpng:data-array image)))))
   )
-
-(block test
-  (perform-mouse-action t *mouse-left* :x 30 :y 450)
-  (sleep .1)
-  (perform-mouse-action nil *mouse-left* :x 30 :y 450)
-  (sleep 1)
-  (x-snapshot :path "snap.png"))
