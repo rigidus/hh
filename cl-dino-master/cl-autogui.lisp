@@ -53,24 +53,94 @@
   (sleep .1)
   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
   (sleep 1)
+  (start))
+
+(defun get-images ()
+  (let ((crop-marker) (cnt 4))
+    (do ((j 0 (+ j 1)))
+        (nil)
+      (do ((j 0 (+ j 1)))
+          ((= j cnt))
+        (perform-key-action t 116)
+        (perform-key-action nil 116))
+      (x-snapshot :path `,(format nil "test~A.png" *image-indx*))
+      (sleep 1)
+      (first-point *image-array*)
+      (setf crop-marker
+            (crop-teaser *image-array*
+                         `,(format nil
+                                   "/home/sonja/repo/org/cl-dino-master/test~A.png"
+                                   *image-indx*)))
+      (if (eql crop-marker -2)
+          (progn
+            (format t "~% get-images: no teasers anymore")
+            (return-from get-images 1))
+
+          (if (eql crop-marker -1)
+              ;; встретили блок рекламы, пропускаем, не анализируя
+              (setf cnt 2)
+              (progn
+                (setf *image-indx* (+ *image-indx* 1))
+                (setf cnt 4)))))))
+
+;; (defun start ()
+;;   (do ((i 0 (+ 1 i)))
+;;       ((= i 6))
+;;     (perform-key-action t 116)
+;;     (perform-key-action nil 116))
+;;   (sleep 1)
+;;   (let ((get-marker 0))
+;;   (tagbody
+;;   beginning
+;;      (setf *image-indx* 0)
+;;      (setf get-marker (get-images))
+;;      (sleep 10)
+;;      (append *image-pathname*)
+;;      (sleep 5)
+;;      (resize  *image-pathname*)
+;;      (sleep 1)
+;;      (run-tess *image-pathname* *out-text* *langs*)
+;;      (if (eql get-marker 1)
+;;          (return-from start 0)
+;;          (go beginning)))))
+
+
+(defun start ()
   (do ((i 0 (+ 1 i)))
       ((= i 6))
     (perform-key-action t 116)
     (perform-key-action nil 116))
   (sleep 1)
+  (get-images)
+  (sleep 5)
   (do ((i 0 (+ 1 i)))
-      ((= i 7))
-    (do ((j 0 (+ j 1)))
-        ((= j 4))
-      (perform-key-action t 116)
-      (perform-key-action nil 116))
-    (x-snapshot :path `,(format nil "test~A.png" *image-indx*))
+      ((= i 20))
+    (resize `,(format nil
+                      "/home/sonja/repo/org/cl-dino-master/test~A.png"
+                      i))
     (sleep 1)
-    (first-point *image-array*)
-    (crop-teaser *image-array*
-                 `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                           *image-indx*))
-    (setf *image-indx* (+ *image-indx* 1))))
+    (run-tess `,(format nil
+                        "/home/sonja/repo/org/cl-dino-master/test~A.png"
+                        i) *out-text* *langs*)))
+
+
+(defun run-tess (input-image output-text &optional (langs "eng"))
+  (let ((proc (sb-ext:run-program "/usr/bin/tesseract"
+                                  ;; `(,input-image ,output-text "-l" ,langs)
+                                  ;; :input :stream :output :stream)))
+                                  `(,input-image "stdout" "-l" ,langs)
+                                  :input :stream :output :stream)))
+    (if proc
+        ;; открываем поток тесеракта на чтение
+        (with-open-stream (input (sb-ext:process-input proc))
+          ;; открыли поток тесеракта на запись
+          (with-open-stream (output (sb-ext:process-output proc))
+            (do ((line (read-line output nil 'eof)
+                       (read-line output nil 'eof)))
+                ((eql line 'eof))
+              (format t "~% ~A" line)
+              (force-output output))))
+        (format t "~% didn't run tesseract"))))
 
 (defun append-image (image-pathname)
   (let ((proc (sb-ext:run-program
@@ -89,43 +159,11 @@
               (force-output output))))
         (format t "~% resize: didn't run ImageMagic"))))
 
-;;   (resize  *image-pathname*)
-;;   (run-tess *image-pathname* *out-text* *langs*))
-
-;; проблема скроллинга.
-;; Вариант 1:
-;; у необработанного изображения запоминаем RGB, скролим до тех пор, пока этот ряд не
-;; окажется на самом верху. Недостаток: сравнивать 2000+ пикселей + перебор всего массива
-;; на каждой итерации + возможность пропустить, когда нижний ряд окажется сверху, тогда
-;; промотаем всю страницу
-;; Вариант 2:
-;; у блоков есть нижняя граница. Скролим до тех пор, пока не увидим еще одну нижнюю
-;; границу. Тогда скриним от текущей нижней границы до следующей. Недостаток: как
-;; определить, что это именно следующая нижняя граница, а не текущая?
-;; Варинт 3:
-;; есть размер текущего блока. Смещаем Y на высоту блока. (Построчный скролинг..)
-
-(defun run-tess (input-image output-text &optional (langs "eng"))
-  (let ((proc (sb-ext:run-program "/usr/bin/tesseract"
-                                  `(,input-image ,output-text "-l" ,langs)
-                                  :input :stream :output :stream)))
-    (if proc
-        ;; открываем поток тесеракта на чтение
-        (with-open-stream (input (sb-ext:process-input proc))
-          ;; открыли поток тесеракта на запись
-          (with-open-stream (output (sb-ext:process-output proc))
-            (do ((line (read-line output nil 'eof)
-                       (read-line output nil 'eof)))
-                ((eql line 'eof))
-              (format t "~A" line)
-              (force-output output))))
-        (format t "~% didn't run tesseract"))))
-
 (defun resize (image)
   (let ((proc (sb-ext:run-program
                "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/mogrify"
                `("-resize"
-                 "3000x624"
+                 "1500x502"
                  ,image)
                :input :stream :output :stream)))
     (if proc
@@ -142,37 +180,48 @@
   (format t "~% crop")
   (multiple-value-bind (border-height x-begin y-begin)
       (find-border image-array)
-    (format t "~% ~Ax~A+~A+~A"
-            *teaser-width* border-height
-            x-begin y-begin)
-    (let ((proc (sb-ext:run-program
-                 "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/mogrify"
-                 `("-crop"
-                   ,(format nil "~Ax~A+~A+~A"
-                            *teaser-width* border-height
-                            x-begin y-begin)
-                   ,image-path)
-                 :input :stream :output :stream)))
-      (if proc
-          (with-open-stream (input (sb-ext:process-input proc))
-            (with-open-stream (output (sb-ext:process-output proc))
-              (do ((a-line (read-line output nil 'eof)
-                           (read-line output nil 'eof)))
-                  ((eql a-line 'eof))
-                (format t "~A" a-line)
-                (force-output output))))
-          (format t "~% crop-teaser: didn't run ImageMagic")))))
+    (if (eql border-height 0)
+        ;; нулевая высота, встретили блок рекламы
+        (return-from crop-teaser -1)
+        (if (and (null x-begin) (null y-begin))
+            ;; вообще не нашли бордюр, тизеры кончились
+            (return-from crop-teaser -2)
+        (progn
+          (format t "~% ~Ax~A+~A+~A"
+                  *teaser-width* border-height
+                  x-begin y-begin)
+          (let ((proc (sb-ext:run-program
+                       "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/mogrify"
+                       `("-crop"
+                         ,(format nil "~Ax~A+~A+~A"
+                                  *teaser-width* border-height
+                                  x-begin y-begin)
+                         ,image-path)
+                       :input :stream :output :stream)))
+            (if proc
+                (with-open-stream (input (sb-ext:process-input proc))
+                  (with-open-stream (output (sb-ext:process-output proc))
+                    (do ((a-line (read-line output nil 'eof)
+                                 (read-line output nil 'eof)))
+                        ((eql a-line 'eof))
+                      (format t "~A" a-line)
+                      (force-output output))
+                    ;; 0 = успех
+                    (return-from crop-teaser 0)))
+                (format t "~% crop-teaser: didn't run ImageMagic"))))))))
 
 (defun find-border (image-array)
   ;; получаем первую точку границы тизера (левый верхний угол)
   (multiple-value-bind (x-begin y-begin)
       (first-point image-array)
-    (if (and x-begin y-begin)
+    (if (and (null x-begin) (null y-begin))
+        (progn
+          (format t "~% find-border: didn't find the border")
+          (values nil nil nil))
     ;; получаем ширину и высоту тизера
     (multiple-value-bind (border-height)
         (get-size x-begin y-begin image-array)
-      (values border-height x-begin y-begin))
-    (format t "~% find-border: didn't find the border"))))
+      (values border-height x-begin y-begin)))))
 
 ;; ищем верхний левый угол тизера
 ;; если текущий пиксель = цвет бордюра и следующий за ним справа имеет этот же цвет,
@@ -188,7 +237,10 @@
                (eql 241 (aref image-array y (+ x 1) 0))
                (eql 200 (aref image-array y (+ x 1) 1))
                (eql 70 (aref image-array y (+ x 1) 2)))
-          (return-from first-point (values x y))))))
+          (return-from first-point (values x y)))))
+  ;; если после выполнения циклов точка не найдена
+  (return-from first-point (values nil nil)))
+
 
 ;; ищем высоту
 (defun get-size (x y image-array)
