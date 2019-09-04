@@ -36,13 +36,22 @@
 (defparameter *default-heght* 670)
 (defparameter *default-width* 1295)
 (defparameter *teaser-width* 690)
+(defparameter *snap-width* 855)
+(defparameter *snap-height* 670)
+(defparameter *snap-x* 440)
 (defparameter *default-x* 60)
 (defparameter *default-y* 37)
 (defparameter *image-array* nil)
 (defparameter *mouse-left* 1)
 (defparameter *mouse-middle* 2)
 (defparameter *mouse-right* 3)
-
+(defparameter *R-usual* 231)
+(defparameter *G-usual* 231)
+(defparameter *B-usual* 231)
+(defparameter *R-priority* 241)
+(defparameter *G-priority* 200)
+(defparameter *B-priority* 70)
+(defparameter *priority* nil)
 ;; тест цикла:
 ;; переключиться в окно браузера -> сделать скрин ->
 ;; обрезать изображение ровно до размера тизера -> увеличить полученный тизер
@@ -63,9 +72,11 @@
           ((= j cnt))
         (perform-key-action t 116)
         (perform-key-action nil 116))
-      (x-snapshot :path `,(format nil "test~A.png" *image-indx*))
       (sleep 1)
-      (first-point *image-array*)
+      (x-snapshot :x 440 :width  *snap-width*
+                  :path `,(format nil "test~A.png" *image-indx*))
+      (sleep 1)
+      ;;(first-point *image-array*)
       (setf crop-marker
             (crop-teaser *image-array*
                          `,(format nil
@@ -82,28 +93,19 @@
               (progn
                 (setf *image-indx* (+ *image-indx* 1))
                 (setf cnt 4)))))))
+(block test
 
-;; (defun start ()
-;;   (do ((i 0 (+ 1 i)))
-;;       ((= i 6))
-;;     (perform-key-action t 116)
-;;     (perform-key-action nil 116))
-;;   (sleep 1)
-;;   (let ((get-marker 0))
-;;   (tagbody
-;;   beginning
-;;      (setf *image-indx* 0)
-;;      (setf get-marker (get-images))
-;;      (sleep 10)
-;;      (append *image-pathname*)
-;;      (sleep 5)
-;;      (resize  *image-pathname*)
-;;      (sleep 1)
-;;      (run-tess *image-pathname* *out-text* *langs*)
-;;      (if (eql get-marker 1)
-;;          (return-from start 0)
-;;          (go beginning)))))
-
+    (defparameter *image-indx* 0)
+    (perform-mouse-action t *mouse-left* :x 30 :y 450)
+    (sleep .1)
+    (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+    (sleep 1)
+    (x-snapshot :x 440 :width  *snap-width*
+                :path `,(format nil "test~A.png" *image-indx*))
+    (crop-teaser *image-array*
+                 `,(format nil
+                           "/home/sonja/repo/org/cl-dino-master/test~A.png"
+                           *image-indx*)))
 
 (defun start ()
   (do ((i 0 (+ 1 i)))
@@ -111,7 +113,7 @@
     (perform-key-action t 116)
     (perform-key-action nil 116))
   (sleep 1)
-  (get-images)
+  (get-images))
   (sleep 5)
   (do ((i 0 (+ 1 i)))
       ((= i 20))
@@ -141,6 +143,30 @@
               (format t "~% ~A" line)
               (force-output output))))
         (format t "~% didn't run tesseract"))))
+
+(defparameter *hh-teaser-url*
+  "https://hh.ru/search/vacancy?L_is_autosearch=false&area=2&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A"
+  "https://spb.hh.ru/search/vacancy?L_is_autosearch=false&area=1&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A")
+
+(defparameter *browser-path*  "/usr/bin/firefox")
+
+(defun open-browser (browser-path url)
+  (let ((proc (sb-ext:run-program
+               `,browser-path
+               `(,url)
+               :input :stream :output :stream)))
+    (if proc
+        (with-open-stream (input (sb-ext:process-input proc))
+          (with-open-stream (output (sb-ext:process-output proc))
+            (do ((a-line (read-line output nil 'eof)
+                         (read-line output nil 'eof)))
+                ((eql a-line 'eof))
+              (format t "~A" a-line)
+              (force-output output))))
+        (format t "~% resize: didn't run ImageMagic"))))
+
+;;(open-browser *browser-path* (format nil *hh-teaser-url* 1))
+
 
 (defun append-image (image-pathname)
   (let ((proc (sb-ext:run-program
@@ -182,10 +208,14 @@
       (find-border image-array)
     (if (eql border-height 0)
         ;; нулевая высота, встретили блок рекламы
-        (return-from crop-teaser -1)
+        (progn
+          (format t "~% crop -1")
+        (return-from crop-teaser -1))
         (if (and (null x-begin) (null y-begin))
             ;; вообще не нашли бордюр, тизеры кончились
-            (return-from crop-teaser -2)
+            (progn
+              (format t "~% crop -2")
+            (return-from crop-teaser -2))
         (progn
           (format t "~% ~Ax~A+~A+~A"
                   *teaser-width* border-height
@@ -211,55 +241,98 @@
                 (format t "~% crop-teaser: didn't run ImageMagic"))))))))
 
 (defun find-border (image-array)
-  ;; получаем первую точку границы тизера (левый верхний угол)
+  ;; ищем левый верхний угол у вакансии (сначала ищем выделенные)
   (multiple-value-bind (x-begin y-begin)
-      (first-point image-array)
-    (if (and (null x-begin) (null y-begin))
+      (first-point image-array *R-priority* *G-priority* *B-priority*
+                   *snap-height* *snap-width*)
+    ;; нашли?
+    (if (and x-begin y-begin)
+        ;; да
+        ;; получаем высоту тизера
+        (multiple-value-bind (border-height)
+            (get-size x-begin y-begin image-array
+                      *R-priority* *G-priority* *B-priority*)
+          (values border-height x-begin y-begin))
+        ;; нет
+        ;; ищем левый верхний угол у обычной вакансии
+        (multiple-value-bind (x-begin y-begin)
+            (first-point image-array *R-usual* *G-usual* *B-usual*
+                         *snap-height* *snap-width*)
+          ;; нашли?
+          (if (and x-begin y-begin)
+              ;; да
+              ;; проверяем, точно ли это тизер
+              (progn
+                (format t "~% usual")
+              (if (check-width x-begin y-begin *image-array* *teaser-width*
+                               *snap-width* *R-usual* *G-usual* *B-usual*)
+                  ;; да, это тизер
+                  (multiple-value-bind (border-height)
+                      (get-size x-begin y-begin image-array
+                                *R-usual* *G-usual* *B-usual*)
+                    (values border-height x-begin y-begin))
+                  ;; нет, это другой элемент
         (progn
           (format t "~% find-border: didn't find the border")
-          (values nil nil nil))
-    ;; получаем ширину и высоту тизера
-    (multiple-value-bind (border-height)
-        (get-size x-begin y-begin image-array)
-      (values border-height x-begin y-begin)))))
+          (values nil nil nil))))
+              ;; не нашли даже даже точку вхождения в бордюр
+              (progn
+                (format t "~% find-border: didn't find the first point")
+                (values nil nil nil)))))))
+
+  (defun check-width (x y image-array teaser-width image-width r g b)
+    (let ((width 0))
+      (format t "~% x ~A y ~A" x y)
+    (do ((i x (+ i 1)))
+        ((= i (- image-width 1)) width)
+      (if (and (eql r (aref image-array y i 0))
+               (eql g (aref image-array y i 1))
+               (eql b (aref image-array y i 2)))
+          (setf width (+ width 1))))
+    (if (eql width teaser-width)
+        (progn
+          ;;(format t "~% width ~A" width)
+        (values width))
+        (format t "~% check-width: it's not a teaser"))))
+
 
 ;; ищем верхний левый угол тизера
 ;; если текущий пиксель = цвет бордюра и следующий за ним справа имеет этот же цвет,
 ;; точка найдена
-(defun first-point (image-array)
+(defun first-point (image-array r g b image-height image-width)
   (do ((x 0 (+ x 1)))
-      ((= x 1294))
+      ((= x image-width))
     (do ((y 0 (+ y 1)))
-        ((= y 669))
-      (if (and (eql 241 (aref image-array y x 0))
-               (eql 200 (aref image-array y x 1))
-               (eql 70 (aref image-array y x 2))
-               (eql 241 (aref image-array y (+ x 1) 0))
-               (eql 200 (aref image-array y (+ x 1) 1))
-               (eql 70 (aref image-array y (+ x 1) 2)))
+        ((= y image-height))
+      (if (and (eql r (aref image-array y x 0))
+               (eql g (aref image-array y x 1))
+               (eql b (aref image-array y x 2))
+               (eql r (aref image-array y (+ x 1) 0))
+               (eql g (aref image-array y (+ x 1) 1))
+               (eql b (aref image-array y (+ x 1) 2)))
           (return-from first-point (values x y)))))
   ;; если после выполнения циклов точка не найдена
   (return-from first-point (values nil nil)))
 
 
 ;; ищем высоту
-(defun get-size (x y image-array)
+(defun get-height (x y image-array r g b)
   (format t "~% x ~A y ~A" x y)
   (let ((height 0) (cnt (- *default-heght* 1)))
     (do ((i (+ y 1) (+ i 1)))
         ((= i cnt) height)
       ;; если пиксель экрана имеет цвет бордюра
-      (if (and (eql 241 (aref image-array i x 0))
-               (eql 200 (aref image-array i x 1))
-               (eql 70 (aref image-array i x 2)))
+      (if (and (eql r (aref image-array i x 0))
+               (eql g (aref image-array i x 1))
+               (eql b (aref image-array i x 2)))
           ;; а соседний справа не имеет
-          (if  (and (not (eql 241 (aref image-array i (+ x 1) 0)))
-                    (not (eql 200 (aref image-array i (+ x 1) 1)))
-                    (not (eql 70 (aref image-array i (+ x 1) 2))))
+          (if  (and (not (eql r (aref image-array i (+ x 1) 0)))
+                    (not (eql g (aref image-array i (+ x 1) 1)))
+                    (not (eql b (aref image-array i (+ x 1) 2))))
                ;; увеличиваем высоту
                  (setf height (+ height 1))
                ;; в противном случае мы достигли нижней границы = левый нижний угол
-               (return-from get-size height))))))
+                 (return-from get-height height))))))
 
 
 ;; ---------------------------------------
