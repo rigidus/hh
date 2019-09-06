@@ -52,6 +52,12 @@
 (defparameter *R-priority* 241)
 (defparameter *G-priority* 200)
 (defparameter *B-priority* 70)
+(defparameter *hh-teaser-url*
+  "https://hh.ru/search/vacancy?L_is_autosearch=false&area=2&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A"
+  "https://spb.hh.ru/search/vacancy?L_is_autosearch=false&area=1&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A")
+
+(defparameter *browser-path*  "/usr/bin/firefox")
+
 ;; тест цикла:
 ;; переключиться в окно браузера -> сделать скрин ->
 ;; обрезать изображение ровно до размера тизера -> увеличить полученный тизер
@@ -63,6 +69,27 @@
   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
   (sleep 1)
   (start))
+
+(defun start ()
+  (do ((i 0 (+ 1 i)))
+      ((= i 6))
+    (perform-key-action t 116)
+    (perform-key-action nil 116))
+  (sleep 1)
+  (get-images)
+  (sleep 5)
+  (setf *image-amount* (*image-amount* -1))
+  (do ((i 0 (+ i 1)))
+      ((= i *image-amount*))
+    (resize `,(format nil
+                      "/home/sonja/repo/org/cl-dino-master/test~A.png"
+                      i))
+    (sleep 1)
+    (run-tess `,(format nil
+                        "/home/sonja/repo/org/cl-dino-master/test~A.png"
+                        i) `,(format nil
+                                     "/home/sonja/repo/org/cl-dino-master/out~A"
+                                     i) *langs*)))
 
 (defun get-images ()
   (let ((crop-marker) (cnt 4))
@@ -93,26 +120,6 @@
                 (setf *image-indx* (+ *image-indx* 1))
                 (setf cnt 4)))))))
 
-(defun start ()
-  (do ((i 0 (+ 1 i)))
-      ((= i 6))
-    (perform-key-action t 116)
-    (perform-key-action nil 116))
-  (sleep 1)
-  (get-images)
-  (sleep 5)
-  (setf *image-amount* (*image-amount* -1))
-(do ((i 0 (+ i 1)))
-    ((= i *image-amount*))
-    (resize `,(format nil
-                      "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                      i))
-    (sleep 1)
-    (run-tess `,(format nil
-                        "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                        i) `,(format nil
-                                     "/home/sonja/repo/org/cl-dino-master/out~A"
-                                     i) *langs*)))
 
 
 (defun run-tess (input-image output-text &optional (langs "eng"))
@@ -132,47 +139,6 @@
               (format t "~% ~A" line)
               (force-output output))))
         (format t "~% didn't run tesseract"))))
-
-(defparameter *hh-teaser-url*
-  "https://hh.ru/search/vacancy?L_is_autosearch=false&area=2&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A"
-  "https://spb.hh.ru/search/vacancy?L_is_autosearch=false&area=1&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A")
-
-(defparameter *browser-path*  "/usr/bin/firefox")
-
-(defun open-browser (browser-path url)
-  (let ((proc (sb-ext:run-program
-               `,browser-path
-               `(,url)
-               :input :stream :output :stream)))
-    (if proc
-        (with-open-stream (input (sb-ext:process-input proc))
-          (with-open-stream (output (sb-ext:process-output proc))
-            (do ((a-line (read-line output nil 'eof)
-                         (read-line output nil 'eof)))
-                ((eql a-line 'eof))
-              (format t "~A" a-line)
-              (force-output output))))
-        (format t "~% resize: didn't run ImageMagic"))))
-
-;;(open-browser *browser-path* (format nil *hh-teaser-url* 1))
-
-
-(defun append-image (image-pathname)
-  (let ((proc (sb-ext:run-program
-               "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/convert"
-               `("-append"
-                 "*.png"
-                 ,image-pathname)
-               :input :stream :output :stream)))
-    (if proc
-        (with-open-stream (input (sb-ext:process-input proc))
-          (with-open-stream (output (sb-ext:process-output proc))
-            (do ((a-line (read-line output nil 'eof)
-                         (read-line output nil 'eof)))
-                ((eql a-line 'eof))
-              (format t "~A" a-line)
-              (force-output output))))
-        (format t "~% resize: didn't run ImageMagic"))))
 
 (defun resize (image)
   (let ((proc (sb-ext:run-program
@@ -199,36 +165,36 @@
         ;; нулевая высота, встретили блок рекламы
         (progn
           (format t "~% crop -1")
-        (return-from crop-teaser -1))
+          (return-from crop-teaser -1))
         (if (and (null x-begin) (null y-begin))
             ;; вообще не нашли бордюр, тизеры кончились
             (progn
               (format t "~% crop -2")
-            (return-from crop-teaser -2))
-        (progn
-          (format t "~% ~Ax~A+~A+~A"
-                  *teaser-width* border-height
-                  x-begin y-begin)
-          (let ((proc (sb-ext:run-program
-                       "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/mogrify"
-                       `("-crop"
-                         ,(format nil "~Ax~A+~A+~A"
-                                  *teaser-width* border-height
-                                  x-begin y-begin)
-                         ,image-path)
-                       :input :stream :output :stream)))
-            (if proc
-                (with-open-stream (input (sb-ext:process-input proc))
-                  (with-open-stream (output (sb-ext:process-output proc))
-                    (do ((a-line (read-line output nil 'eof)
-                                 (read-line output nil 'eof)))
-                        ((eql a-line 'eof))
-                      (format t "~A" a-line)
-                      (force-output output))
-                    ;; 0 = успех
-                    (setf *image-amount* (+ *image-amount* 1))
-                    (return-from crop-teaser 0)))
-                (format t "~% crop-teaser: didn't run ImageMagic"))))))))
+              (return-from crop-teaser -2))
+            (progn
+              (format t "~% ~Ax~A+~A+~A"
+                      *teaser-width* border-height
+                      x-begin y-begin)
+              (let ((proc (sb-ext:run-program
+                           "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/mogrify"
+                           `("-crop"
+                             ,(format nil "~Ax~A+~A+~A"
+                                      *teaser-width* border-height
+                                      x-begin y-begin)
+                             ,image-path)
+                           :input :stream :output :stream)))
+                (if proc
+                    (with-open-stream (input (sb-ext:process-input proc))
+                      (with-open-stream (output (sb-ext:process-output proc))
+                        (do ((a-line (read-line output nil 'eof)
+                                     (read-line output nil 'eof)))
+                            ((eql a-line 'eof))
+                          (format t "~A" a-line)
+                          (force-output output))
+                        ;; 0 = успех
+                        (setf *image-amount* (+ *image-amount* 1))
+                        (return-from crop-teaser 0)))
+                    (format t "~% crop-teaser: didn't run ImageMagic"))))))))
 
 (defun find-border (image-array)
   ;; ищем левый верхний угол у вакансии (сначала ищем выделенные)
@@ -254,37 +220,21 @@
               ;; проверяем, точно ли это тизер
               (progn
                 (format t "~% usual")
-              (if (check-width x-begin y-begin *image-array* *teaser-width*
-                               *snap-width* *R-usual* *G-usual* *B-usual*)
-                  ;; да, это тизер
-                  (multiple-value-bind (border-height)
-                      (get-size x-begin y-begin image-array
-                                *R-usual* *G-usual* *B-usual*)
-                    (values border-height x-begin y-begin))
-                  ;; нет, это другой элемент
-        (progn
-          (format t "~% find-border: didn't find the border")
-          (values nil nil nil))))
+                (if (check-width x-begin y-begin *image-array* *teaser-width*
+                                 *snap-width* *R-usual* *G-usual* *B-usual*)
+                    ;; да, это тизер
+                    (multiple-value-bind (border-height)
+                        (get-size x-begin y-begin image-array
+                                  *R-usual* *G-usual* *B-usual*)
+                      (values border-height x-begin y-begin))
+                    ;; нет, это другой элемент
+                    (progn
+                      (format t "~% find-border: didn't find the border")
+                      (values nil nil nil))))
               ;; не нашли даже даже точку вхождения в бордюр
               (progn
                 (format t "~% find-border: didn't find the first point")
                 (values nil nil nil)))))))
-
-  (defun check-width (x y image-array teaser-width image-width r g b)
-    (let ((width 0))
-      (format t "~% x ~A y ~A" x y)
-    (do ((i x (+ i 1)))
-        ((= i (- image-width 1)) width)
-      (if (and (eql r (aref image-array y i 0))
-               (eql g (aref image-array y i 1))
-               (eql b (aref image-array y i 2)))
-          (setf width (+ width 1))))
-    (if (eql width teaser-width)
-        (progn
-          ;;(format t "~% width ~A" width)
-        (values width))
-        (format t "~% check-width: it's not a teaser"))))
-
 
 ;; ищем верхний левый угол тизера
 ;; если текущий пиксель = цвет бордюра и следующий за ним справа имеет этот же цвет,
@@ -320,9 +270,41 @@
                     (not (eql g (aref image-array i (+ x 1) 1)))
                     (not (eql b (aref image-array i (+ x 1) 2))))
                ;; увеличиваем высоту
-                 (setf height (+ height 1))
+               (setf height (+ height 1))
                ;; в противном случае мы достигли нижней границы = левый нижний угол
-                 (return-from get-height height))))))
+               (return-from get-height height))))))
+
+(defun check-width (x y image-array teaser-width image-width r g b)
+  (let ((width 0))
+    (format t "~% x ~A y ~A" x y)
+    (do ((i x (+ i 1)))
+        ((= i (- image-width 1)) width)
+      (if (and (eql r (aref image-array y i 0))
+               (eql g (aref image-array y i 1))
+               (eql b (aref image-array y i 2)))
+          (setf width (+ width 1))))
+    (if (eql width teaser-width)
+        (progn
+          ;;(format t "~% width ~A" width)
+          (values width))
+        (format t "~% check-width: it's not a teaser"))))
+
+
+(defun open-browser (browser-path url)
+  (let ((proc (sb-ext:run-program
+               `,browser-path
+               `(,url)
+               :input :stream :output :stream)))
+    (if proc
+        (with-open-stream (input (sb-ext:process-input proc))
+          (with-open-stream (output (sb-ext:process-output proc))
+            (do ((a-line (read-line output nil 'eof)
+                         (read-line output nil 'eof)))
+                ((eql a-line 'eof))
+              (format t "~A" a-line)
+              (force-output output))))
+        (format t "~% resize: didn't run ImageMagic"))))
+
 
 
 ;; ---------------------------------------
