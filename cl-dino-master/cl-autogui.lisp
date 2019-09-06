@@ -28,10 +28,11 @@
            #:x-find-color))
 
 (in-package  #:cl-autogui)
+(defparameter *image-amount* 0)
 (defparameter *image-indx* 0)
 (defparameter *image-pathname*
-  "/home/sonja/repo/org/cl-dino-master/test.jpg")
-(defparameter *out-text* "/home/sonja/repo/org/cl-dino-master/out")
+  "/home/sonja/repo/org/cl-dino-master/test~A.png")
+(defparameter *out-text* "/home/sonja/repo/org/cl-dino-master/out~A")
 (defparameter *langs* "rus+eng")
 (defparameter *default-heght* 670)
 (defparameter *default-width* 1295)
@@ -51,7 +52,6 @@
 (defparameter *R-priority* 241)
 (defparameter *G-priority* 200)
 (defparameter *B-priority* 70)
-(defparameter *priority* nil)
 ;; тест цикла:
 ;; переключиться в окно браузера -> сделать скрин ->
 ;; обрезать изображение ровно до размера тизера -> увеличить полученный тизер
@@ -76,7 +76,6 @@
       (x-snapshot :x 440 :width  *snap-width*
                   :path `,(format nil "test~A.png" *image-indx*))
       (sleep 1)
-      ;;(first-point *image-array*)
       (setf crop-marker
             (crop-teaser *image-array*
                          `,(format nil
@@ -93,19 +92,6 @@
               (progn
                 (setf *image-indx* (+ *image-indx* 1))
                 (setf cnt 4)))))))
-(block test
-
-    (defparameter *image-indx* 0)
-    (perform-mouse-action t *mouse-left* :x 30 :y 450)
-    (sleep .1)
-    (perform-mouse-action nil *mouse-left* :x 30 :y 450)
-    (sleep 1)
-    (x-snapshot :x 440 :width  *snap-width*
-                :path `,(format nil "test~A.png" *image-indx*))
-    (crop-teaser *image-array*
-                 `,(format nil
-                           "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                           *image-indx*)))
 
 (defun start ()
   (do ((i 0 (+ 1 i)))
@@ -113,24 +99,27 @@
     (perform-key-action t 116)
     (perform-key-action nil 116))
   (sleep 1)
-  (get-images))
+  (get-images)
   (sleep 5)
-  (do ((i 0 (+ 1 i)))
-      ((= i 20))
+  (setf *image-amount* (*image-amount* -1))
+(do ((i 0 (+ i 1)))
+    ((= i *image-amount*))
     (resize `,(format nil
                       "/home/sonja/repo/org/cl-dino-master/test~A.png"
                       i))
     (sleep 1)
     (run-tess `,(format nil
                         "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                        i) *out-text* *langs*)))
+                        i) `,(format nil
+                                     "/home/sonja/repo/org/cl-dino-master/out~A"
+                                     i) *langs*)))
 
 
 (defun run-tess (input-image output-text &optional (langs "eng"))
   (let ((proc (sb-ext:run-program "/usr/bin/tesseract"
                                   ;; `(,input-image ,output-text "-l" ,langs)
                                   ;; :input :stream :output :stream)))
-                                  `(,input-image "stdout" "-l" ,langs)
+                                  `(,input-image ,output-text "-l" ,langs)
                                   :input :stream :output :stream)))
     (if proc
         ;; открываем поток тесеракта на чтение
@@ -237,6 +226,7 @@
                       (format t "~A" a-line)
                       (force-output output))
                     ;; 0 = успех
+                    (setf *image-amount* (+ *image-amount* 1))
                     (return-from crop-teaser 0)))
                 (format t "~% crop-teaser: didn't run ImageMagic"))))))))
 
