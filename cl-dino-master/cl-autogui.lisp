@@ -1,10 +1,13 @@
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
   #-clx
   (ql:quickload 'clx)
   #-zpng
   (ql:quickload 'zpng)
   #-cffi
-  (ql:quickload 'cffi))
+  (ql:quickload 'cffi)
+  (ql:quickload "png-read")
+)
 
 (defpackage #:cl-autogui
   (:use #:common-lisp #:xlib)
@@ -34,10 +37,10 @@
   "/home/sonja/repo/org/cl-dino-master/test~A.png")
 (defparameter *out-text* "/home/sonja/repo/org/cl-dino-master/out~A")
 (defparameter *langs* "rus+eng")
-(defparameter *default-heght* 670)
+(defparameter *default-height* 668)
 (defparameter *default-width* 1295)
 (defparameter *teaser-width* 690)
-(defparameter *snap-width* 855)
+(defparameter *snap-width* 755)
 (defparameter *snap-height* 670)
 (defparameter *snap-x* 440)
 (defparameter *default-x* 60)
@@ -58,17 +61,34 @@
 
 (defparameter *browser-path*  "/usr/bin/firefox")
 
-;; тест цикла:
-;; переключиться в окно браузера -> сделать скрин ->
-;; обрезать изображение ровно до размера тизера -> увеличить полученный тизер
-;; передать изображение в тесеракт
-(block test
-  (defparameter *image-indx* 0)
-  (perform-mouse-action t *mouse-left* :x 30 :y 450)
-  (sleep .1)
-  (perform-mouse-action nil *mouse-left* :x 30 :y 450)
-  (sleep 1)
-  (start))
+;; план:
+;; - скрин
+;; - нашли тизер
+;; - двигаемся к правому верхнему углу (+ x teaser-width)
+;; - область от бордюра фонового цвета? (+ y 40) (- x 40)
+;; да! вырезаем , отправляем в тесеракт, результат записываем в зп
+;; нет! записываем 0 в зп
+;; - от заголовка вакансии двигаемся к источнику
+;; - повторяем алгоритм как с зп
+;; - копируем ссылку на вакансию из буфера обмена, записываем в id
+;; - вырезаем заголовок вакансии, копируем в поле структуры
+;; записываем полученную вакансию в хэш-таблицу, где ключ - id вакансии
+
+;; область зп, нижний левый угол:
+;; (+ 60 по Y от верхней границы тизера, высота) (- 220 от правого верхнего угла, ширина)
+;; область заголовка:
+;; (+ 70 к Х от верхнего левого угла) (+ 35 к Y от верхнего левого угла)
+;; область источника:
+;; (+ 25 к Y от заголовка) X тот же
+
+;; (block test
+;;   (defparameter *image-indx* 0)
+;;   (perform-mouse-action t *mouse-left* :x 30 :y 450)
+;;   (sleep .1)
+;;   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+;;   (sleep 1)
+;;   (start))
+
 
 (defun start ()
   (do ((i 0 (+ 1 i)))
@@ -119,9 +139,55 @@
               (progn
                 (setf *image-indx* (+ *image-indx* 1))
                 (setf cnt 4)))))))
+;;---------------------------------------------------------------------------------------
+;; принимает 2 массива изображений и пограничные координаты для поиска, т.е. ряд пикселей,
+;; на котором поиск совпадающих рядов закончится
+(defun find-row (image-up image-down y-border height)
+  (do ((cur-y (- height 1) (- cur-y 1)))
+      (( = cur-y y-border))
+    (if (check-row image-up image-down cur-y 0 *snap-width*)
+        (return-from find-row cur-y))))
 
+;; проверяет 2 ряда пикселей на совпадение
+;; если проверены все, возвращает Y координату
+;; если хоть один не совпал - nil
+(defun check-row (image-up image-down image-up-y image-down-y width-image)
+  (do ((i 0 (+ i 1)))
+      (( = i width-image) image-up-y)
+    ;; если цвет писелей не одинаковый
+    (if (not
+         (and (eql (aref image-up image-up-y i 0)
+                   (aref image-down image-down-y i 0))
+              (eql (aref image-up image-up-y i 1)
+                   (aref image-down image-down-y i 1))
+              (eql (aref image-up image-up-y i 2)
+                   (aref image-down image-down-y i 2))))
+        ;; прерываем поиск и возвращаем nil
+        (return-from check-row nil)
+        )))
 
+;; (block find-row-test
+;;   (defparameter *image-indx* 1)
+;;   (perform-mouse-action t *mouse-left* :x 30 :y 450)
+;;     (sleep .1)
+;;     (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+;;     (sleep 1)
+;;     (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
+;;                 :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
+;;                                 *image-indx*))
+;;     (setf *image-indx* (+ *image-indx* 1))
+;;     (let ((image-array-old *image-array*))
+;;             (perform-key-action t 117)
+;;       (sleep .1)
+;;       (perform-key-action nil 117)
+;;       (sleep 1)
+;;       (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
+;;                   :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
+;;                                   *image-indx*))
+;;       (sleep 5)
+;;       (find-row image-array-old *image-array* 300 668)))
 
+;;-------------------------------------------------------------------------------------
 (defun run-tess (input-image output-text &optional (langs "eng"))
   (let ((proc (sb-ext:run-program "/usr/bin/tesseract"
                                   ;; `(,input-image ,output-text "-l" ,langs)
@@ -308,6 +374,37 @@
 
 
 ;; ---------------------------------------
+
+;;_______________________________________________________________________
+(defun vectorize-image (image)
+  "Превращает массив size-X столбцов по size-Y точек в линейный,
+   где сначала идут все X-точки нулевой строки, потом первой, итд"
+  (let ((idx 0)
+        (result (make-array (reduce #'* (array-dimensions image))
+                            :element-type '(unsigned-byte 8))))
+    (loop for dx from 0 to (- (array-dimension image 1) 1) :do
+         (loop for dy from 0 to (- (array-dimension image 0) 1) :do
+              (loop for dz from 0 to (- (array-dimension image 2) 1) :do
+                   (setf (aref result idx)
+                         (aref image dy dx dz))
+                   (incf idx))))
+    result))
+
+;; (print (vectorize-image *test-image*))
+
+(defun load-png (pathname-str)
+  "Возвращает массив size-X столбцов по size-Y точек,
+   где столбцы идут слева-направо, а точки в них - сверху-вниз"
+  (png-read:image-data
+   (png-read:read-png-file pathname-str)))
+
+(defun save-png (width height pathname-str image)
+  (let* ((png (make-instance 'zpng:png :width width :height height
+                             :color-type :truecolor-alpha
+                             :image-data image)))
+    (zpng:write-png png pathname-str)))
+
+;;________________________________________________________________________
 
 
 (defmacro with-display (host (display screen root-window) &body body)
