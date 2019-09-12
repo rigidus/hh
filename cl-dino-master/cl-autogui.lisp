@@ -31,21 +31,18 @@
            #:x-find-color))
 
 (in-package  #:cl-autogui)
-(defparameter *image-amount* 0)
-(defparameter *image-indx* 0)
-(defparameter *image-pathname*
-  "/home/sonja/repo/org/cl-dino-master/test~A.png")
+
 (defparameter *out-text* "/home/sonja/repo/org/cl-dino-master/out~A")
 (defparameter *langs* "rus+eng")
 (defparameter *default-height* 668)
 (defparameter *default-width* 1295)
 (defparameter *teaser-width* 690)
 (defparameter *snap-width* 755)
-(defparameter *snap-height* 670)
+(defparameter *snap-height* 668)
 (defparameter *snap-x* 440)
 (defparameter *default-x* 60)
 (defparameter *default-y* 37)
-(defparameter *image-array* nil)
+(defparameter *new-image-array* nil)
 (defparameter *mouse-left* 1)
 (defparameter *mouse-middle* 2)
 (defparameter *mouse-right* 3)
@@ -60,34 +57,6 @@
   "https://spb.hh.ru/search/vacancy?L_is_autosearch=false&area=1&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A")
 
 (defparameter *browser-path*  "/usr/bin/firefox")
-
-;; план:
-;; - скрин
-;; - нашли тизер
-;; - двигаемся к правому верхнему углу (+ x teaser-width)
-;; - область от бордюра фонового цвета? (+ y 40) (- x 40)
-;; да! вырезаем , отправляем в тесеракт, результат записываем в зп
-;; нет! записываем 0 в зп
-;; - от заголовка вакансии двигаемся к источнику
-;; - повторяем алгоритм как с зп
-;; - копируем ссылку на вакансию из буфера обмена, записываем в id
-;; - вырезаем заголовок вакансии, копируем в поле структуры
-;; записываем полученную вакансию в хэш-таблицу, где ключ - id вакансии
-
-;; область зп, нижний левый угол:
-;; (+ 60 по Y от верхней границы тизера, высота) (- 220 от правого верхнего угла, ширина)
-;; область заголовка:
-;; (+ 70 к Х от верхнего левого угла) (+ 35 к Y от верхнего левого угла)
-;; область источника:
-;; (+ 25 к Y от заголовка) X тот же
-
-;; (block test
-;;   (defparameter *image-indx* 0)
-;;   (perform-mouse-action t *mouse-left* :x 30 :y 450)
-;;   (sleep .1)
-;;   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
-;;   (sleep 1)
-;;   (start))
 
 
 (defun start ()
@@ -124,7 +93,7 @@
                   :path `,(format nil "test~A.png" *image-indx*))
       (sleep 1)
       (setf crop-marker
-            (crop-teaser *image-array*
+            (crop-teaser *new-image-array*
                          `,(format nil
                                    "/home/sonja/repo/org/cl-dino-master/test~A.png"
                                    *image-indx*)))
@@ -142,50 +111,169 @@
 ;;---------------------------------------------------------------------------------------
 ;; принимает 2 массива изображений и пограничные координаты для поиска, т.е. ряд пикселей,
 ;; на котором поиск совпадающих рядов закончится
-(defun find-row (image-up image-down y-border height)
-  (do ((cur-y (- height 1) (- cur-y 1)))
+(defun find-row (image-up image-down y-border)
+  (do ((cur-y (- (array-dimension image-up 0) 1) (- cur-y 1)))
       (( = cur-y y-border))
-    (if (check-row image-up image-down cur-y 0 *snap-width*)
-        (return-from find-row cur-y))))
+    (if (check-row image-up image-down cur-y 0)
+        (progn
+        (format t "~% ~A cur-y" cur-y)
+        (return-from find-row cur-y)))))
 
+  ;;(array-dimension *new-image-array* 0)
 ;; проверяет 2 ряда пикселей на совпадение
 ;; если проверены все, возвращает Y координату
 ;; если хоть один не совпал - nil
-(defun check-row (image-up image-down image-up-y image-down-y width-image)
-  (do ((i 0 (+ i 1)))
-      (( = i width-image) image-up-y)
+(defun check-row (image-up image-down image-up-y image-down-y)
+  (let ((width (- (array-dimension image-up 1) 1)))
+  (do ((x 0 (+ x 1)))
+      (( = x width) image-up-y)
     ;; если цвет писелей не одинаковый
-    (if (not
-         (and (eql (aref image-up image-up-y i 0)
-                   (aref image-down image-down-y i 0))
-              (eql (aref image-up image-up-y i 1)
-                   (aref image-down image-down-y i 1))
-              (eql (aref image-up image-up-y i 2)
-                   (aref image-down image-down-y i 2))))
-        ;; прерываем поиск и возвращаем nil
-        (return-from check-row nil)
-        )))
+        (if (not
+             (and (eql (aref image-up image-up-y x  0)
+                       (aref image-down image-down-y x 0))
+                  (eql (aref image-up image-up-y x 1)
+                       (aref image-down image-down-y x 1))
+                  (eql (aref image-up image-up-y x 2)
+                       (aref image-down image-down-y x 2))))
+            (progn
+              (format t "~% image-up-y x 0 ~A image-down-y x 0 ~A
+                         ~% image-up-y x 1 ~A image-down-y x 1 ~A
+                         ~% image-up-y x 2 ~A image-down-y x 2 ~A ~&
+                         x ~A y ~A y-down ~A"
+                      (aref image-up image-up-y x  0)
+                      (aref image-down image-down-y x 0)
+                      (aref image-up image-up-y x 1)
+                      (aref image-down image-down-y x 1)
+                      (aref image-up image-up-y x 2)
+                      (aref image-down image-down-y x 2)
+                      x image-up-y image-down-y)
+                      ;; прерываем поиск и возвращаем nil
+        (return-from check-row nil))
+        ))))
 
-;; (block find-row-test
+(defun append-image (image-up image-down y-point)
+  ;; (format t "~% image-up ~A image-down ~A y-point ~A"
+  ;;         (array-dimensions image-up) (array-dimensions image-down) y-point)
+  (destructuring-bind (height width colors)
+      (array-dimensions image-down)
+    (let* ((append-height (- (* height 2) 1))
+           (append-image-array (make-array `(,append-height ,width ,colors)
+                                           :element-type '(unsigned-byte 8))))
+  (do ((y 0 (+ y 1)))
+      ((= y y-point))
+    (do ((x 0 (+ x 1)))
+        ((= x width))
+      (setf (aref append-image-array y x 0) (aref image-up y x 0))
+      (setf (aref append-image-array y x 1) (aref image-up y x 1))
+      (setf (aref append-image-array y x 2) (aref image-up y x 2))
+      (setf (aref append-image-array y x 3) (aref image-up y x 3))))
+  (do ((y-new y-point (+ y-new 1))
+       (y 0 (+ y 1)))
+      ((= y height) append-image-array)
+    (do ((x 0 (+ x 1)))
+        ((= x width))
+      (setf (aref append-image-array y-new x 0) (aref image-down y x 0))
+      (setf (aref append-image-array y-new x 1) (aref image-down y x 1))
+      (setf (aref append-image-array y-new x 2) (aref image-down y x 2))
+      (setf (aref append-image-array y-new x 3) (aref image-down y x 3)))))))
+
+
+(defun my-vectorize-image (image)
+  "Превращает массив (высота; ширина; цвет),
+   где сначала идут все X-точки нулевой строки, потом первой, итд"
+  (let ((idx 0)
+        (result (make-array (reduce #'* (array-dimensions image))
+                            :element-type '(unsigned-byte 8))))
+    (do ((y 0 (+ 1 y)))
+        ((= y (array-dimension image 0)) result)
+      (do ((x 0 (+ 1 x)))
+          ((= x (array-dimension image 1)))
+        (do ((z 0 (+ 1 z)))
+            ((= z (array-dimension image 2)))
+          (setf (aref result idx)
+                (aref image y x z))
+          (incf idx))))))
+
+(block little-test
+  (open-browser "/usr/bin/firefox"
+                *hh-teaser-url*)
+  (sleep 8)
+    (let ((image-array-up (x-snapshot :x 440 :y 100 :width *snap-width*
+                                      :height *snap-height*
+                                      :path "/home/sonja/Pictures/test0.png")))
+      (sleep 1)
+      (perform-key-action t 117)
+      (sleep .1)
+      (perform-key-action nil 117)
+      (sleep 1)
+      (incf image-indx)
+      (let
+          ((image-array-down
+            (x-snapshot :x 440 :y 100 :width *snap-width* :height *snap-height*
+                        :path "/home/sonja/Pictures/test1.png")))
+        (let ((point (find-row image-array-up image-array-down
+                               (/ (array-dimension image-array-up 0) 2))))
+          (format t "~% ~A" point)
+          ;;)))))
+          ;;(if point
+              (progn
+                (let* ((array (append-image image-array-up image-array-down
+                                            (- *snap-height* 1)))
+                     (width (array-dimension array 1))
+                     (height (array-dimension array 0)))
+                     (save-png width height
+                               "/home/sonja/Pictures/result.png"
+                               (my-vectorize-image
+                                array))))))))
+
+
+;; остальные тесты ниже
+;;____________________________________________________________________________
+
+;; склейка
+;; вовращает трехмерный массив: высота, ширина, цвет
+;; (array-dimensions *image-array*)
+
+;; (defparameter *test-up*
+;;   (load-png "/home/sonja/repo/org/cl-dino-master/test1.png"))
+
+;; (defparameter *test-down*
+;;   (load-png "/home/sonja/repo/org/cl-dino-master/test2.png"))
+
+;; (format t "~% *image-array* ~A ~A ~A" (aref *image-array*  650 619 0)
+;;         (aref *image-array* 650 619 1) (aref *image-array*  650 619 2))
+
+;; (format t "~% *test-down* (x y)  ~A ~A ~A" (aref *image-array*  619 650 0)
+;;         (aref *image-array* 619 650 1) (aref *image-array* 619 650 2))
+
+;; (format t "~% **test-down*2* (y x) ~A ~A ~A" (aref *image-array* 650 619 0)
+        ;; (aref *image-array* 650 619 1) (aref *image-array* 650 619 2))
+
+;; (array-dimensions *new-image-array*)
+;; (aref *new-image-array* 1334 754 1)
+
+;; (block append-test
 ;;   (defparameter *image-indx* 1)
+;;   ;;(defparameter *result* 0)
 ;;   (perform-mouse-action t *mouse-left* :x 30 :y 450)
+;;   (sleep .1)
+;;   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+;;   (sleep 1)
+;;   (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
+;;               :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
+;;                               *image-indx*))
+;;   (setf *image-indx* (+ *image-indx* 1))
+;;   (let ((image-array-old *image-array*))
+;;     (perform-key-action t 117)
 ;;     (sleep .1)
-;;     (perform-mouse-action nil *mouse-left* :x 30 :y 450)
+;;     (perform-key-action nil 117)
 ;;     (sleep 1)
 ;;     (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
 ;;                 :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
 ;;                                 *image-indx*))
-;;     (setf *image-indx* (+ *image-indx* 1))
-;;     (let ((image-array-old *image-array*))
-;;             (perform-key-action t 117)
-;;       (sleep .1)
-;;       (perform-key-action nil 117)
-;;       (sleep 1)
-;;       (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
-;;                   :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
-;;                                   *image-indx*))
-;;       (sleep 5)
-;;       (find-row image-array-old *image-array* 300 668)))
+;;     (sleep 5)
+;;     (append-image image-array-old *image-array* 667)))
+
 
 ;;-------------------------------------------------------------------------------------
 (defun run-tess (input-image output-text &optional (langs "eng"))
@@ -515,14 +603,14 @@
   (let ((png (make-instance 'zpng:png :width width :height height
                              :color-type :truecolor-alpha
                              :image-data data)))
-         (setf *image-array* (zpng:data-array png))
+    (let ((image-array (zpng:data-array png)))
     (dotimes (y height)
       (dotimes (x width)
         ;; BGR -> RGB, ref code: https://goo.gl/slubfW
         ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
-        (rotatef (aref *image-array* y x 0) (aref *image-array* y x 2))
-        (setf (aref *image-array* y x 3) 255)))
-    png))
+        (rotatef (aref image-array y x 0) (aref image-array y x 2))
+        (setf (aref image-array y x 3) 255)))
+    png)))
 
 (multiple-value-bind (default-width default-height) (x-size)
 
@@ -551,5 +639,7 @@
               (cond
                 (png? (zpng:write-png image path))
                 (t (error "Only PNG file is supported"))))
-            (zpng:data-array image)))))
+            (zpng:data-array image))
+        (values (zpng:data-array image)))
+      ))
   )
