@@ -200,7 +200,7 @@
   (sleep 8)
     (let ((image-array-up (x-snapshot :x 440 :y 100 :width *snap-width*
                                       :height *snap-height*
-                                      :path "/home/sonja/Pictures/test0.png")))
+                                      :path "~/Pictures/test0.png")))
       (sleep 1)
       (perform-key-action t 117)
       (sleep .1)
@@ -210,7 +210,7 @@
       (let
           ((image-array-down
             (x-snapshot :x 440 :y 100 :width *snap-width* :height *snap-height*
-                        :path "/home/sonja/Pictures/test1.png")))
+                        :path "~/Pictures/test1.png")))
         (let ((point (find-row image-array-up image-array-down
                                (/ (array-dimension image-array-up 0) 2))))
           (format t "~% ~A" point)
@@ -222,7 +222,7 @@
                      (width (array-dimension array 1))
                      (height (array-dimension array 0)))
                      (save-png width height
-                               "/home/sonja/Pictures/result.png"
+                               "~/Pictures/result.png"
                                (my-vectorize-image
                                 array))))))))
 
