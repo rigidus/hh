@@ -195,25 +195,26 @@
           (incf idx))))))
 
 (block little-test
-  (open-browser "/usr/bin/firefox"
-                *hh-teaser-url*)
-  (sleep 8)
+  ;; (open-browser "/usr/bin/firefox"
+  ;;               *hh-teaser-url*)
+  ;; (sleep 8)
+  (defparameter *snap-width* 755)
+  (defparameter *snap-height* 668)
     (let ((image-array-up (x-snapshot :x 440 :y 100 :width *snap-width*
                                       :height *snap-height*
                                       :path "~/Pictures/test0.png")))
-      (sleep 1)
-      (perform-key-action t 117)
-      (sleep .1)
-      (perform-key-action nil 117)
-      (sleep 1)
-      (incf image-indx)
+      ;; (sleep 1)
+      ;; (perform-key-action t 117)
+      ;; (sleep .1)
+      ;; (perform-key-action nil 117)
+      ;; (sleep 1)
       (let
           ((image-array-down
             (x-snapshot :x 440 :y 100 :width *snap-width* :height *snap-height*
                         :path "~/Pictures/test1.png")))
-        (let ((point (find-row image-array-up image-array-down
-                               (/ (array-dimension image-array-up 0) 2))))
-          (format t "~% ~A" point)
+        ;; (let ((point (find-row image-array-up image-array-down
+        ;;                        (/ (array-dimension image-array-up 0) 2))))
+        ;;  (format t "~% ~A" point)
           ;;)))))
           ;;(if point
               (progn
@@ -224,7 +225,8 @@
                      (save-png width height
                                "~/Pictures/result.png"
                                (my-vectorize-image
-                                array))))))))
+                                array)))))))
+
 
 
 ;; остальные тесты ниже
