@@ -195,6 +195,40 @@
           (incf idx))))))
 
 
+
+;; ширина, высота, цвет => высота, ширина, цвет
+(defun rewrite-array (array)
+  (let ((result (make-array `(,(array-dimension array 1) ,(array-dimension array 0)
+                                ,(array-dimension array 2))
+                             :element-type '(unsigned-byte 8)))
+        (idx 0)
+        (vec-arr (vectorize-image array)))
+    ;;(format t "~% new-arr ~A "(array-dimensions result))
+    (do ((y 0 (incf y)))
+        ((= y (array-dimension result 0)))
+      (do ((x 0 (incf x)))
+          ((= x (array-dimension result 1)))
+        (do ((z 0 (incf z)))
+            ((= z (array-dimension result 2)))
+        ;;(format t "~% ~A ~A ~A x y z" x y z)
+        (setf (aref result y x z) (aref vec-arr idx))
+              (incf idx))))
+    result))
+
+(block rewrite-array-test
+  (let* ((array1 (load-png "~/Pictures/test0.png"))
+         (array2 (load-png "~/Pictures/test1.png"))
+         (new-arr1 (rewrite-array array1))
+         (new-arr2 (rewrite-array array2))
+         (result (append-image new-arr1 new-arr2
+                               (- *snap-height* 1)))
+         (width (array-dimension result 1))
+         (height (array-dimension result 0)))
+    (save-png width height
+              "~/Pictures/result.png"
+              (my-vectorize-image
+               result))))
+
 (block little-test
   ;; (open-browser "/usr/bin/firefox"
   ;;               *hh-teaser-url*)
