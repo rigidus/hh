@@ -34,7 +34,6 @@
 
 (defparameter *out-text* "/home/sonja/repo/org/cl-dino-master/out~A")
 (defparameter *langs* "rus+eng")
-(defparameter *default-height* 668)
 (defparameter *default-width* 1295)
 (defparameter *teaser-width* 690)
 (defparameter *snap-width* 755)
@@ -58,57 +57,6 @@
 
 (defparameter *browser-path*  "/usr/bin/firefox")
 
-
-(defun start ()
-  (do ((i 0 (+ 1 i)))
-      ((= i 6))
-    (perform-key-action t 116)
-    (perform-key-action nil 116))
-  (sleep 1)
-  (get-images)
-  (sleep 5)
-  (setf *image-amount* (*image-amount* -1))
-  (do ((i 0 (+ i 1)))
-      ((= i *image-amount*))
-    (resize `,(format nil
-                      "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                      i))
-    (sleep 1)
-    (run-tess `,(format nil
-                        "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                        i) `,(format nil
-                                     "/home/sonja/repo/org/cl-dino-master/out~A"
-                                     i) *langs*)))
-
-(defun get-images ()
-  (let ((crop-marker) (cnt 4))
-    (do ((j 0 (+ j 1)))
-        (nil)
-      (do ((j 0 (+ j 1)))
-          ((= j cnt))
-        (perform-key-action t 116)
-        (perform-key-action nil 116))
-      (sleep 1)
-      (x-snapshot :x 440 :width  *snap-width*
-                  :path `,(format nil "test~A.png" *image-indx*))
-      (sleep 1)
-      (setf crop-marker
-            (crop-teaser *new-image-array*
-                         `,(format nil
-                                   "/home/sonja/repo/org/cl-dino-master/test~A.png"
-                                   *image-indx*)))
-      (if (eql crop-marker -2)
-          (progn
-            (format t "~% get-images: no teasers anymore")
-            (return-from get-images 1))
-
-          (if (eql crop-marker -1)
-              ;; встретили блок рекламы, пропускаем, не анализируя
-              (setf cnt 2)
-              (progn
-                (setf *image-indx* (+ *image-indx* 1))
-                (setf cnt 4)))))))
-;;---------------------------------------------------------------------------------------
 ;; принимает 2 массива изображений и пограничные координаты для поиска, т.е. ряд пикселей,
 ;; на котором поиск совпадающих рядов закончится
 (defun find-row (image-up image-down y-border)
@@ -119,7 +67,6 @@
         (format t "~% ~A cur-y" cur-y)
         (return-from find-row cur-y)))))
 
-  ;;(array-dimension *new-image-array* 0)
 ;; проверяет 2 ряда пикселей на совпадение
 ;; если проверены все, возвращает Y координату
 ;; если хоть один не совпал - nil
@@ -151,6 +98,8 @@
         (return-from check-row nil))
         ))))
 
+;; принимает 2 массива изображений и точку, от которой их рано склеить
+;; возвращает склеенный массив
 (defun append-image (image-up image-down y-point)
   ;; (format t "~% image-up ~A image-down ~A y-point ~A"
   ;;         (array-dimensions image-up) (array-dimensions image-down) y-point)
@@ -159,23 +108,24 @@
     (let* ((append-height (- (* height 2) 1))
            (append-image-array (make-array `(,append-height ,width ,colors)
                                            :element-type '(unsigned-byte 8))))
-  (do ((y 0 (+ y 1)))
-      ((= y y-point))
-    (do ((x 0 (+ x 1)))
-        ((= x width))
-      (setf (aref append-image-array y x 0) (aref image-up y x 0))
-      (setf (aref append-image-array y x 1) (aref image-up y x 1))
-      (setf (aref append-image-array y x 2) (aref image-up y x 2))
-      (setf (aref append-image-array y x 3) (aref image-up y x 3))))
-  (do ((y-new y-point (+ y-new 1))
-       (y 0 (+ y 1)))
-      ((= y height) append-image-array)
-    (do ((x 0 (+ x 1)))
-        ((= x width))
-      (setf (aref append-image-array y-new x 0) (aref image-down y x 0))
-      (setf (aref append-image-array y-new x 1) (aref image-down y x 1))
-      (setf (aref append-image-array y-new x 2) (aref image-down y x 2))
-      (setf (aref append-image-array y-new x 3) (aref image-down y x 3)))))))
+      ;; копируем первую картинку в новый массив до точки склейки
+      (do ((y 0 (+ y 1)))
+          ((= y y-point))
+        (do ((x 0 (+ x 1)))
+            ((= x width))
+          (do ((z 0 (+ z 1)))
+              ((= x colors))
+            (setf (aref append-image-array y x z) (aref image-up y x z)))))
+      ;; копируем втрую картинку
+      (do ((y-new y-point (+ y-new 1))
+           (y 0 (+ y 1)))
+          ((= y height))
+        (do ((x 0 (+ x 1)))
+            ((= x width))
+          (do ((z 0 (+ z 1)))
+              ((= x colors))
+            (setf (aref append-image-array y x z) (aref image-up y x z)))))
+      append-image-array)))
 
 
 (defun my-vectorize-image (image)
@@ -194,8 +144,80 @@
                 (aref image y x z))
           (incf idx))))))
 
+(defun vectorize-image (image)
+  "Превращает массив size-X столбцов по size-Y точек в линейный,
+   где сначала идут все X-точки нулевой строки, потом первой, итд"
+  (let ((idx 0)
+        (result (make-array (reduce #'* (array-dimensions image))
+                            :element-type '(unsigned-byte 8))))
+    (loop for dx from 0 to (- (array-dimension image 1) 1) :do
+         (loop for dy from 0 to (- (array-dimension image 0) 1) :do
+              (loop for dz from 0 to (- (array-dimension image 2) 1) :do
+                   (setf (aref result idx)
+                         (aref image dy dx dz))
+                   (incf idx))))
+    result))
+
+;; (print (vectorize-image *test-image*))
+
+(defun save-png (width height pathname-str image)
+  (let* ((png (make-instance 'zpng:png :width width :height height
+                             :color-type :truecolor-alpha
+                             :image-data image)))
+    (zpng:write-png png pathname-str)))
+
+(defun binarization (image &optional threshold)
+  (let ((dims (array-dimensions image)))
+    (let ((result (make-array (butlast dims) :element-type '(unsigned-byte 8))))
+      (loop for dx from 0 to (- (array-dimension image 1) 1) :do
+           (loop for dy from 0 to (- (array-dimension image 0) 1) :do
+                (loop for dz from 0 to (- (array-dimension image 2) 1) :do
+                     (let ((avg (floor (+ (aref image dy dx 1)
+                                          (aref image dy dx 0)
+                                          (aref image dy dx 2))
+                                       3)))
+                       (when threshold
+                         (if (< threshold avg)
+                             (setf avg 255)
+                             (setf avg 0)))
+                       (setf (aref result dy dx) avg)))))
+      result)))
 
 
+(defun vectorize-image-gray (image)
+  "Превращает массив size-X столбцов по size-Y точек в линейный,
+   где сначала идут все X-точки нулевой строки, потом первой, итд"
+  (let ((idx 0)
+        (result (make-array (reduce #'* (array-dimensions image))
+                            :element-type '(unsigned-byte 8))))
+    (loop for dx from 0 to (- (array-dimension image 1) 1) :do
+         (loop for dy from 0 to (- (array-dimension image 0) 1) :do
+              (setf (aref result idx)
+                    (aref image dy dx))
+              (incf idx)))
+    result))
+
+(defun save-png-gray (width height pathname-str image)
+  (let* ((png (make-instance 'zpng:png :width width :height height
+                             :color-type :grayscale
+                             :image-data image)))
+    (zpng:write-png png pathname-str)))
+
+
+(defun load-png (pathname-str)
+  "Возвращает массив size-X столбцов по size-Y точек,
+     где столбцы идут слева-направо, а точки в них - сверху-вниз"
+  (png-read:image-data
+   (png-read:read-png-file pathname-str)))
+
+;; (let* ((image (load-png "cell.png"))
+;;        (image (binarization image)))
+;;   (destructuring-bind (dw dh)
+;;       (array-dimensions image)
+;;     (save-png-gray dw dh "cell1.png" (vectorize-image-gray image))))
+
+
+;; меняет размерность массива по принципу:
 ;; ширина, высота, цвет => высота, ширина, цвет
 (defun rewrite-array (array)
   (let ((result (make-array `(,(array-dimension array 1) ,(array-dimension array 0)
@@ -215,101 +237,78 @@
               (incf idx))))
     result))
 
-(block rewrite-array-test
-  (let* ((array1 (load-png "~/Pictures/test0.png"))
-         (array2 (load-png "~/Pictures/test1.png"))
-         (new-arr1 (rewrite-array array1))
-         (new-arr2 (rewrite-array array2))
-         (result (append-image new-arr1 new-arr2
-                               (- *snap-height* 1)))
-         (width (array-dimension result 1))
-         (height (array-dimension result 0)))
-    (save-png width height
-              "~/Pictures/result.png"
-              (my-vectorize-image
-               result))))
+;; (block rewrite-array-test
+;;   (let* ((array1 (load-png "~/Pictures/test0.png"))
+;;          (array2 (load-png "~/Pictures/test1.png"))
+;;          (new-arr1 (rewrite-array array1))
+;;          (new-arr2 (rewrite-array array2))
+;;          (result (append-image new-arr1 new-arr2
+;;                                (- *snap-height* 1)))
+;;          (width (array-dimension result 1))
+;;          (height (array-dimension result 0)))
+;;     (save-png width height
+;;               "~/Pictures/result.png"
+;;               (my-vectorize-image
+;;                result))))
 
-(block little-test
-  ;; (open-browser "/usr/bin/firefox"
-  ;;               *hh-teaser-url*)
-  ;; (sleep 8)
-  (defparameter *snap-width* 755)
-  (defparameter *snap-height* 668)
-  (let ((image-array-up (x-snapshot :x 440 :y 100
-                                    :width *snap-width*
-                                    :height *snap-height*)))
-    ;; (sleep 1)
-    ;; (perform-key-action t 117)
-    ;; (sleep .1)
-    ;; (perform-key-action nil 117)
-    ;; (sleep 1)
-    (let ((image-array-down
-           (x-snapshot :x 440 :y 100
-                       :width *snap-width*
-                       :height *snap-height*)))
-      ;; (let ((point (find-row image-array-up image-array-down
-      ;;                        (/ (array-dimension image-array-up 0) 2))))
-      ;;  (format t "~% ~A" point)
-      ;;)))))
-      ;;(if point
-      (progn
-        (let* ((array (append-image image-array-up image-array-down
-                                    (- *snap-height* 1)))
-               (width (array-dimension array 1))
-               (height (array-dimension array 0)))
-          (save-png width height
-                    "~/Pictures/result.png"
-                    (my-vectorize-image
-                     array)))))))
+(block test
+  (open-browser "/usr/bin/firefox"
+                 *hh-teaser-url*)
+  (sleep 8)
+  (do ((i 0 (+ 1 i)))
+      ((= i 6))
+    (perform-key-action t 116)
+    (perform-key-action nil 116))
+  (sleep 1)
+ (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+             :path "/home/sonja/Pictures/test0.png")
+ (let* ((arr (load-png "~/Pictures/test0.png"))
+        (array (rewrite-array arr)))
+    (sleep 1)
+    (crop-teaser array
+                 "/home/sonja/Pictures/test0.png")
 
+    (let* ((image (load-png "~/Pictures/test0.png"))
+           (image (binarization image)))
+      (destructuring-bind (dw dh)
+          (array-dimensions image)
+        (save-png-gray dw dh "~/Pictures/test0.png" (vectorize-image-gray image))))
 
-;; остальные тесты ниже
-;;____________________________________________________________________________
+    (sleep 1)
+    ;;(resize "/home/sonja/Pictures/test0.png")
+    (run-tess "/home/sonja/Pictures/test0.png" "/home/sonja/repo/org/cl-dino-master/out"
+              *langs*)))
 
-;; склейка
-;; вовращает трехмерный массив: высота, ширина, цвет
-;; (array-dimensions *image-array*)
-
-;; (defparameter *test-up*
-;;   (load-png "/home/sonja/repo/org/cl-dino-master/test1.png"))
-
-;; (defparameter *test-down*
-;;   (load-png "/home/sonja/repo/org/cl-dino-master/test2.png"))
-
-;; (format t "~% *image-array* ~A ~A ~A" (aref *image-array*  650 619 0)
-;;         (aref *image-array* 650 619 1) (aref *image-array*  650 619 2))
-
-;; (format t "~% *test-down* (x y)  ~A ~A ~A" (aref *image-array*  619 650 0)
-;;         (aref *image-array* 619 650 1) (aref *image-array* 619 650 2))
-
-;; (format t "~% **test-down*2* (y x) ~A ~A ~A" (aref *image-array* 650 619 0)
-        ;; (aref *image-array* 650 619 1) (aref *image-array* 650 619 2))
-
-;; (array-dimensions *new-image-array*)
-;; (aref *new-image-array* 1334 754 1)
-
-;; (block append-test
-;;   (defparameter *image-indx* 1)
-;;   ;;(defparameter *result* 0)
-;;   (perform-mouse-action t *mouse-left* :x 30 :y 450)
-;;   (sleep .1)
-;;   (perform-mouse-action nil *mouse-left* :x 30 :y 450)
-;;   (sleep 1)
-;;   (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
-;;               :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
-;;                               *image-indx*))
-;;   (setf *image-indx* (+ *image-indx* 1))
-;;   (let ((image-array-old *image-array*))
-;;     (perform-key-action t 117)
-;;     (sleep .1)
-;;     (perform-key-action nil 117)
-;;     (sleep 1)
-;;     (x-snapshot :x 440 :y 100 :width *snap-width* :height 668
-;;                 :path `,(format nil "/home/sonja/repo/org/cl-dino-master/test~A.png"
-;;                                 *image-indx*))
-;;     (sleep 5)
-;;     (append-image image-array-old *image-array* 667)))
-
+;; (block little-test
+;;   ;; (open-browser "/usr/bin/firefox"
+;;   ;;               *hh-teaser-url*)
+;;   ;; (sleep 8)
+;;   (let ((image-array-up (x-snapshot :x 440 :y 100
+;;                                     :width *snap-width*
+;;                                     :height *snap-height*)))
+;;     ;; (sleep 1)
+;;     ;; (perform-key-action t 117)
+;;     ;; (sleep .1)
+;;     ;; (perform-key-action nil 117)
+;;     ;; (sleep 1)
+;;     (let ((image-array-down
+;;            (x-snapshot :x 440 :y 100
+;;                        :width *snap-width*
+;;                        :height *snap-height*)))
+;;       ;; (let ((point (find-row image-array-up image-array-down
+;;       ;;                        (/ (array-dimension image-array-up 0) 2))))
+;;       ;;  (format t "~% ~A" point)
+;;       ;;)))))
+;;       ;;(if point
+;;       (progn
+;;         (let* ((array (append-image image-array-up image-array-down
+;;                                     (- *snap-height* 1)))
+;;                (width (array-dimension array 1))
+;;                (height (array-dimension array 0)))
+;;           (save-png width height
+;;                     "~/Pictures/result.png"
+;;                     (my-vectorize-image
+;;                      array)))))))
 
 ;;-------------------------------------------------------------------------------------
 (defun run-tess (input-image output-text &optional (langs "eng"))
@@ -347,29 +346,28 @@
               (force-output output))))
         (format t "~% resize: didn't run ImageMagic"))))
 
+;; принимает массив пикселей картинки, которую должен вырезать
+;; и путь для файла, куда сохранит новую картинку
+;; путь для image-path должен быть абсолютным
 (defun crop-teaser (image-array image-path)
-  (format t "~% crop")
   (multiple-value-bind (border-height x-begin y-begin)
+      ;; ищем границы тизера
       (find-border image-array)
     (if (eql border-height 0)
         ;; нулевая высота, встретили блок рекламы
-        (progn
-          (format t "~% crop -1")
-          (return-from crop-teaser -1))
+          (return-from crop-teaser -1)
         (if (and (null x-begin) (null y-begin))
             ;; вообще не нашли бордюр, тизеры кончились
-            (progn
-              (format t "~% crop -2")
-              (return-from crop-teaser -2))
+              (return-from crop-teaser -2)
             (progn
               (format t "~% ~Ax~A+~A+~A"
-                      *teaser-width* border-height
+                      (array-dimension image-array 1) border-height
                       x-begin y-begin)
               (let ((proc (sb-ext:run-program
                            "/usr/lib/i386-linux-gnu/ImageMagick-6.8.9/bin-Q16/mogrify"
                            `("-crop"
                              ,(format nil "~Ax~A+~A+~A"
-                                      *teaser-width* border-height
+                                      (array-dimension image-array 1) border-height
                                       x-begin y-begin)
                              ,image-path)
                            :input :stream :output :stream)))
@@ -382,39 +380,36 @@
                           (format t "~A" a-line)
                           (force-output output))
                         ;; 0 = успех
-                        (setf *image-amount* (+ *image-amount* 1))
                         (return-from crop-teaser 0)))
                     (format t "~% crop-teaser: didn't run ImageMagic"))))))))
 
 (defun find-border (image-array)
   ;; ищем левый верхний угол у вакансии (сначала ищем выделенные)
   (multiple-value-bind (x-begin y-begin)
-      (first-point image-array *R-priority* *G-priority* *B-priority*
-                   *snap-height* *snap-width*)
+      (first-point image-array *R-priority* *G-priority* *B-priority*)
     ;; нашли?
     (if (and x-begin y-begin)
         ;; да
         ;; получаем высоту тизера
         (multiple-value-bind (border-height)
-            (get-size x-begin y-begin image-array
+            (get-height x-begin y-begin image-array
                       *R-priority* *G-priority* *B-priority*)
           (values border-height x-begin y-begin))
         ;; нет
         ;; ищем левый верхний угол у обычной вакансии
         (multiple-value-bind (x-begin y-begin)
-            (first-point image-array *R-usual* *G-usual* *B-usual*
-                         *snap-height* *snap-width*)
+            (first-point image-array *R-usual* *G-usual* *B-usual*)
           ;; нашли?
           (if (and x-begin y-begin)
               ;; да
               ;; проверяем, точно ли это тизер
               (progn
                 (format t "~% usual")
-                (if (check-width x-begin y-begin *image-array* *teaser-width*
-                                 *snap-width* *R-usual* *G-usual* *B-usual*)
+                (if (check-width x-begin y-begin image-array *teaser-width*
+                                 *R-usual* *G-usual* *B-usual*)
                     ;; да, это тизер
                     (multiple-value-bind (border-height)
-                        (get-size x-begin y-begin image-array
+                        (get-height x-begin y-begin image-array
                                   *R-usual* *G-usual* *B-usual*)
                       (values border-height x-begin y-begin))
                     ;; нет, это другой элемент
@@ -429,11 +424,11 @@
 ;; ищем верхний левый угол тизера
 ;; если текущий пиксель = цвет бордюра и следующий за ним справа имеет этот же цвет,
 ;; точка найдена
-(defun first-point (image-array r g b image-height image-width)
+(defun first-point (image-array r g b)
   (do ((x 0 (+ x 1)))
-      ((= x image-width))
+      ((= x  (array-dimension image-array 1)))
     (do ((y 0 (+ y 1)))
-        ((= y image-height))
+        ((= y (array-dimension image-array 0))
       (if (and (eql r (aref image-array y x 0))
                (eql g (aref image-array y x 1))
                (eql b (aref image-array y x 2))
@@ -442,15 +437,15 @@
                (eql b (aref image-array y (+ x 1) 2)))
           (return-from first-point (values x y)))))
   ;; если после выполнения циклов точка не найдена
-  (return-from first-point (values nil nil)))
+  (return-from first-point (values nil nil))))
 
 
 ;; ищем высоту
 (defun get-height (x y image-array r g b)
   (format t "~% x ~A y ~A" x y)
-  (let ((height 0) (cnt (- *default-heght* 1)))
+  (let ((height 0))
     (do ((i (+ y 1) (+ i 1)))
-        ((= i cnt) height)
+        ((= i (array-dimension image-array 0)) height)
       ;; если пиксель экрана имеет цвет бордюра
       (if (and (eql r (aref image-array i x 0))
                (eql g (aref image-array i x 1))
@@ -464,18 +459,19 @@
                ;; в противном случае мы достигли нижней границы = левый нижний угол
                (return-from get-height height))))))
 
-(defun check-width (x y image-array teaser-width image-width r g b)
+;; принимает X и Y левого угла тизера, массив пикселей скрина
+;;
+(defun check-width (x y image-array teaser-width r g b)
   (let ((width 0))
     (format t "~% x ~A y ~A" x y)
     (do ((i x (+ i 1)))
-        ((= i (- image-width 1)) width)
+        ((= i (array-dimension image-array 1)) width)
       (if (and (eql r (aref image-array y i 0))
                (eql g (aref image-array y i 1))
                (eql b (aref image-array y i 2)))
           (setf width (+ width 1))))
     (if (eql width teaser-width)
         (progn
-          ;;(format t "~% width ~A" width)
           (values width))
         (format t "~% check-width: it's not a teaser"))))
 
@@ -494,41 +490,6 @@
               (format t "~A" a-line)
               (force-output output))))
         (format t "~% resize: didn't run ImageMagic"))))
-
-
-
-;; ---------------------------------------
-
-;;_______________________________________________________________________
-(defun vectorize-image (image)
-  "Превращает массив size-X столбцов по size-Y точек в линейный,
-   где сначала идут все X-точки нулевой строки, потом первой, итд"
-  (let ((idx 0)
-        (result (make-array (reduce #'* (array-dimensions image))
-                            :element-type '(unsigned-byte 8))))
-    (loop for dx from 0 to (- (array-dimension image 1) 1) :do
-         (loop for dy from 0 to (- (array-dimension image 0) 1) :do
-              (loop for dz from 0 to (- (array-dimension image 2) 1) :do
-                   (setf (aref result idx)
-                         (aref image dy dx dz))
-                   (incf idx))))
-    result))
-
-;; (print (vectorize-image *test-image*))
-
-(defun load-png (pathname-str)
-  "Возвращает массив size-X столбцов по size-Y точек,
-   где столбцы идут слева-направо, а точки в них - сверху-вниз"
-  (png-read:image-data
-   (png-read:read-png-file pathname-str)))
-
-(defun save-png (width height pathname-str image)
-  (let* ((png (make-instance 'zpng:png :width width :height height
-                             :color-type :truecolor-alpha
-                             :image-data image)))
-    (zpng:write-png png pathname-str)))
-
-;;________________________________________________________________________
 
 
 (defmacro with-display (host (display screen root-window) &body body)
@@ -650,7 +611,7 @@
 
 (multiple-value-bind (default-width default-height) (x-size)
   (defun x-snapshot (&key (x *default-x*) (y *default-y*)
-                       (width  *default-width*) (height *default-heght*)
+                       (width  *default-width*) (height *default-height*)
                        path)
     ;; "Return RGB data array (The dimensions correspond to the height, width,
     ;; and pixel components, see comments in x-snapsearch for more details),
@@ -673,3 +634,53 @@
                 (png? (zpng:write-png image path))
                 (t (error "Only PNG file is supported"))))
             (zpng:data-array image))))))
+
+;; (defun start ()
+;;   (do ((i 0 (+ 1 i)))
+;;       ((= i 6))
+;;     (perform-key-action t 116)
+;;     (perform-key-action nil 116))
+;;   (sleep 1)
+;;   (get-images)
+;;   (sleep 5)
+;;   (setf *image-amount* (*image-amount* -1))
+;;   (do ((i 0 (+ i 1)))
+;;       ((= i *image-amount*))
+;;     (resize `,(format nil
+;;                       "/home/sonja/repo/org/cl-dino-master/test~A.png"
+;;                       i))
+;;     (sleep 1)
+;;     (run-tess `,(format nil
+;;                         "/home/sonja/repo/org/cl-dino-master/test~A.png"
+;;                         i) `,(format nil
+;;                                      "/home/sonja/repo/org/cl-dino-master/out~A"
+;;                                      i) *langs*)))
+
+;; (defun get-images ()
+;;   (let ((crop-marker) (cnt 4))
+;;     (do ((j 0 (+ j 1)))
+;;         (nil)
+;;       (do ((j 0 (+ j 1)))
+;;           ((= j cnt))
+;;         (perform-key-action t 116)
+;;         (perform-key-action nil 116))
+;;       (sleep 1)
+;;       (x-snapshot :x 440 :width  *snap-width*
+;;                   :path `,(format nil "test~A.png" *image-indx*))
+;;       (sleep 1)
+;;       (setf crop-marker
+;;             (crop-teaser *new-image-array*
+;;                          `,(format nil
+;;                                    "/home/sonja/repo/org/cl-dino-master/test~A.png"
+;;                                    *image-indx*)))
+;;       (if (eql crop-marker -2)
+;;           (progn
+;;             (format t "~% get-images: no teasers anymore")
+;;             (return-from get-images 1))
+
+;;           (if (eql crop-marker -1)
+;;               ;; встретили блок рекламы, пропускаем, не анализируя
+;;               (setf cnt 2)
+;;               (progn
+;;                 (setf *image-indx* (+ *image-indx* 1))
+;;                 (setf cnt 4)))))))
