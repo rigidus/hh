@@ -194,39 +194,39 @@
                 (aref image y x z))
           (incf idx))))))
 
+
 (block little-test
   ;; (open-browser "/usr/bin/firefox"
   ;;               *hh-teaser-url*)
   ;; (sleep 8)
   (defparameter *snap-width* 755)
   (defparameter *snap-height* 668)
-    (let ((image-array-up (x-snapshot :x 440 :y 100 :width *snap-width*
-                                      :height *snap-height*
-                                      :path "~/Pictures/test0.png")))
-      ;; (sleep 1)
-      ;; (perform-key-action t 117)
-      ;; (sleep .1)
-      ;; (perform-key-action nil 117)
-      ;; (sleep 1)
-      (let
-          ((image-array-down
-            (x-snapshot :x 440 :y 100 :width *snap-width* :height *snap-height*
-                        :path "~/Pictures/test1.png")))
-        ;; (let ((point (find-row image-array-up image-array-down
-        ;;                        (/ (array-dimension image-array-up 0) 2))))
-        ;;  (format t "~% ~A" point)
-          ;;)))))
-          ;;(if point
-              (progn
-                (let* ((array (append-image image-array-up image-array-down
-                                            (- *snap-height* 1)))
-                     (width (array-dimension array 1))
-                     (height (array-dimension array 0)))
-                     (save-png width height
-                               "~/Pictures/result.png"
-                               (my-vectorize-image
-                                array)))))))
-
+  (let ((image-array-up (x-snapshot :x 440 :y 100
+                                    :width *snap-width*
+                                    :height *snap-height*)))
+    ;; (sleep 1)
+    ;; (perform-key-action t 117)
+    ;; (sleep .1)
+    ;; (perform-key-action nil 117)
+    ;; (sleep 1)
+    (let ((image-array-down
+           (x-snapshot :x 440 :y 100
+                       :width *snap-width*
+                       :height *snap-height*)))
+      ;; (let ((point (find-row image-array-up image-array-down
+      ;;                        (/ (array-dimension image-array-up 0) 2))))
+      ;;  (format t "~% ~A" point)
+      ;;)))))
+      ;;(if point
+      (progn
+        (let* ((array (append-image image-array-up image-array-down
+                                    (- *snap-height* 1)))
+               (width (array-dimension array 1))
+               (height (array-dimension array 0)))
+          (save-png width height
+                    "~/Pictures/result.png"
+                    (my-vectorize-image
+                     array)))))))
 
 
 ;; остальные тесты ниже
@@ -615,21 +615,18 @@
     png)))
 
 (multiple-value-bind (default-width default-height) (x-size)
-
   (defun x-snapshot (&key (x *default-x*) (y *default-y*)
                        (width  *default-width*) (height *default-heght*)
-                       (delay 0)
                        path)
-    ;;         "Return RGB data array (The dimensions correspond to the height, width,
+    ;; "Return RGB data array (The dimensions correspond to the height, width,
     ;; and pixel components, see comments in x-snapsearch for more details),
     ;; or write to file (PNG only), depend on if you provide the path keyword"
-    (sleep delay)
     (with-default-window (w)
       (let ((image
              (raw-image->png
-              (get-raw-image w :x x :y y
-                             :width width :height height
-                             :format :z-pixmap)
+              (xlib:get-raw-image w :x x :y y
+                                  :width width :height height
+                                  :format :z-pixmap)
               width height)))
         (if path
             (let* ((ext (pathname-type path))
@@ -641,7 +638,4 @@
               (cond
                 (png? (zpng:write-png image path))
                 (t (error "Only PNG file is supported"))))
-            (zpng:data-array image))
-        (values (zpng:data-array image)))
-      ))
-  )
+            (zpng:data-array image))))))
