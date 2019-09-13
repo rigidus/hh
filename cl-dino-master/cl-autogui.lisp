@@ -204,11 +204,49 @@
     (zpng:write-png png pathname-str)))
 
 
+
+;; Ошибка, возникающая когда мы пытаемся прочитать png
+;; в котором неизвестно сколько байт на точку
+(define-condition unk-png-color-type (error)
+  ((color :initarg :color :reader color))
+  (:report
+   (lambda (condition stream)
+     (format stream "Error in LOAD-PNG: unknown color type: ~A"
+             (color condition)))))
+
 (defun load-png (pathname-str)
   "Возвращает массив size-X столбцов по size-Y точек,
      где столбцы идут слева-направо, а точки в них - сверху-вниз"
-  (png-read:image-data
-   (png-read:read-png-file pathname-str)))
+  (let* ((png (png-read:read-png-file pathname-str))
+         (image-data (png-read:image-data png))
+         (color (png-read:colour-type png))
+         (result
+          (make-array ;; меняем размерности X и Y местами
+           `(,(array-dimension image-data 1)
+              ,(array-dimension image-data 0)
+              ,(array-dimension image-data 2))
+           :element-type (cond ((equal color :TRUECOLOR-ALPHA) '(unsigned-byte 8))
+                               (t (error 'unk-png-color-type :color color))))))
+    ;; (format t "~% new-arr ~A "(array-dimensions result))
+    ;; ширина, высота, цвет => высота, ширина, цвет
+    (macrolet ((cycle (&body body)
+                 `(do ((y 0 (incf y)))
+                      ((= y (array-dimension result 0)))
+                    (do ((x 0 (incf x)))
+                        ((= x (array-dimension result 1)))
+                      (do ((z 0 (incf z)))
+                          ((= z (array-dimension result 2)))
+                        ,@body)))))
+      (cond ((equal color :TRUECOLOR-ALPHA)
+             (cycle (setf (aref result y x z)
+                          (aref image-data x y z))))
+            (t (error 'unk-png-color-type :color color)))
+      result)))
+
+(assert (equalp (load-png *test-path*)
+                (x-snapshot))
+
+
 
 ;; (let* ((image (load-png "cell.png"))
 ;;        (image (binarization image)))
@@ -217,39 +255,6 @@
 ;;     (save-png-gray dw dh "cell1.png" (vectorize-image-gray image))))
 
 
-;; меняет размерность массива по принципу:
-;; ширина, высота, цвет => высота, ширина, цвет
-(defun rewrite-array (array)
-  (let ((result (make-array `(,(array-dimension array 1) ,(array-dimension array 0)
-                                ,(array-dimension array 2))
-                             :element-type '(unsigned-byte 8)))
-        (idx 0)
-        (vec-arr (vectorize-image array)))
-    ;;(format t "~% new-arr ~A "(array-dimensions result))
-    (do ((y 0 (incf y)))
-        ((= y (array-dimension result 0)))
-      (do ((x 0 (incf x)))
-          ((= x (array-dimension result 1)))
-        (do ((z 0 (incf z)))
-            ((= z (array-dimension result 2)))
-        ;;(format t "~% ~A ~A ~A x y z" x y z)
-        (setf (aref result y x z) (aref vec-arr idx))
-              (incf idx))))
-    result))
-
-;; (block rewrite-array-test
-;;   (let* ((array1 (load-png "~/Pictures/test0.png"))
-;;          (array2 (load-png "~/Pictures/test1.png"))
-;;          (new-arr1 (rewrite-array array1))
-;;          (new-arr2 (rewrite-array array2))
-;;          (result (append-image new-arr1 new-arr2
-;;                                (- *snap-height* 1)))
-;;          (width (array-dimension result 1))
-;;          (height (array-dimension result 0)))
-;;     (save-png width height
-;;               "~/Pictures/result.png"
-;;               (my-vectorize-image
-;;                result))))
 
 (block test
   (open-browser "/usr/bin/firefox"
