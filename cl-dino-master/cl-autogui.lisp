@@ -57,46 +57,101 @@
 
 (defparameter *browser-path*  "/usr/bin/firefox")
 
-;; принимает 2 массива изображений и пограничные координаты для поиска, т.е. ряд пикселей,
-;; на котором поиск совпадающих рядов закончится
-(defun find-row (image-up image-down y-border)
-  (do ((cur-y (- (array-dimension image-up 0) 1) (- cur-y 1)))
-      (( = cur-y y-border))
-    (if (check-row image-up image-down cur-y 0)
-        (progn
-        (format t "~% ~A cur-y" cur-y)
-        (return-from find-row cur-y)))))
+;; кажется, в хэш-таблицу ничего не записывается
+(defun get-xor-images (image-up image-down limit)
+  (let ((arrays (make-hash-table)))
+    (destructuring-bind (height width colors)
+        (array-dimensions image-up)
+      (do ((i limit (incf i)))
+          (( = i height))
+        ;; получаем склеенную картинку
+        (let* ((xor-image (append-xor image-up image-down i))
+               ;; узнаем количество черных точек на ней
+               (black (count-black xor-image)))
+          (format t "~% ~A" black)
+          (setf (gethash i arrays) black)))
+      arrays)))
 
-;; проверяет 2 ряда пикселей на совпадение
-;; если проверены все, возвращает Y координату
-;; если хоть один не совпал - nil
-(defun check-row (image-up image-down image-up-y image-down-y)
-  (let ((width (- (array-dimension image-up 1) 1)))
-  (do ((x 0 (+ x 1)))
-      (( = x width) image-up-y)
-    ;; если цвет писелей не одинаковый
-        (if (not
-             (and (eql (aref image-up image-up-y x  0)
-                       (aref image-down image-down-y x 0))
-                  (eql (aref image-up image-up-y x 1)
-                       (aref image-down image-down-y x 1))
-                  (eql (aref image-up image-up-y x 2)
-                       (aref image-down image-down-y x 2))))
-            (progn
-              (format t "~% image-up-y x 0 ~A image-down-y x 0 ~A
-                         ~% image-up-y x 1 ~A image-down-y x 1 ~A
-                         ~% image-up-y x 2 ~A image-down-y x 2 ~A ~&
-                         x ~A y ~A y-down ~A"
-                      (aref image-up image-up-y x  0)
-                      (aref image-down image-down-y x 0)
-                      (aref image-up image-up-y x 1)
-                      (aref image-down image-down-y x 1)
-                      (aref image-up image-up-y x 2)
-                      (aref image-down image-down-y x 2)
-                      x image-up-y image-down-y)
-                      ;; прерываем поиск и возвращаем nil
-        (return-from check-row nil))
-        ))))
+(defun count-black (image)
+  (destructuring-bind (height width colors)
+      (array-dimensions image)
+    (let ((black 0))
+      (do ((qy 0 (incf qy)))
+          (( = qy height))
+        (do ((qx 0 (incf qx)))
+            ((= qx width))
+          (if (and (eql 0 (aref image qy qx 0))
+                   (eql 0 (aref image qy qx 1))
+                   (eql 0 (aref image qy qx 2)))
+              (incf black))))
+      black)))
+
+
+(defun append-xor (image-up image-down limit)
+  ;;(let ((arrays (make-hash-table)))
+    ;; получили размерность верхнего изображения
+    (destructuring-bind (height width colors)
+        (array-dimensions image-up)
+         (let* ((new-dims  (list (+ height limit) width colors))
+                (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+           ;; копируем первое изображение до дочки склейки в массив
+           (do ((qy 0 (incf qy)))
+               (( = qy limit))
+             (do ((qx 0 (incf qx)))
+                 ((= qx width))
+               (do ((qz 0 (incf qz)))
+                   ((= qz colors))
+                 (setf (aref image-new qy qx qz)
+                       (aref image-up qy qx qz)))))
+           ;; ксорим область наложения
+           ;; область определяется как расстояние от точки склейки до низа массива
+           (let ((image-down-y))
+             (do ((qy limit (incf qy))
+                  (qy2 0 (incf qy2)))
+                  (( = qy height) (setf image-down-y qy2))
+               (do ((qx 0 (incf qx)))
+                   ((= qx width))
+                 ;; сохраняем результат ксора области наложения в новый массив
+                 ;; + копируем значение альфа-канала
+                   (setf (aref image-new qy qx 0)
+                         (logxor (aref image-up qy qx 0)
+                                 (aref image-down qy2 qx 0))
+                         (aref image-new qy qx 1)
+                         (logxor (aref image-up qy qx 1)
+                                 (aref image-down qy2 qx 1))
+                         (aref image-new qy qx 2)
+                         (logxor (aref image-up qy qx 2)
+                                 (aref image-down qy2 qx 2))
+                         (aref image-new qy qx 3)
+                                 (aref image-down qy2 qx 3))
+                   ;;(format t "~% y ~A x ~A xor ~A" qy qx (aref image-new qy qx qz))
+                   ))
+                 ;; переписываем второе изображение в массив, начиная сразу
+                 ;; после области наложения
+                 (do ((qy height (incf qy))
+                      (qy2 image-down-y (incf qy2)))
+                     (( = qy (nth 0 new-dims)))
+                   (do ((qx 0 (incf qx)))
+                       ((= qx width))
+                     (do ((qz 0 (incf qz)))
+                         ((= qz colors))
+                       (setf (aref image-new qy qx qz)
+                             (aref image-down qy2 qx qz)))))
+               image-new))))
+
+;; (let* ((arr-up (load-png "~/Pictures/test0.png"))
+;;        (arr-down (load-png "~/Pictures/test0.png"))
+;;        (new-arr (append-xor arr-up arr-down 300)))
+;;   (destructuring-bind (height width depth)
+;;       (array-dimensions new-arr)
+;;     (format t "~% ~A" (count-black new-arr))
+;;     (save-png width height "~/Pictures/xor.png" new-arr)))
+
+(block test-get-xor-images
+(let* ((arr-up (load-png "~/Pictures/test0.png"))
+       (arr-down (load-png "~/Pictures/test0.png"))
+       (arrs (get-xor-images arr-up arr-down 500)))))
+
 
 (defun append-image (image-up image-down y-point)
   "Принимает 2 массива изображений и высоту,
@@ -136,8 +191,6 @@
     (destructuring-bind (height width  &rest rest)
         (array-dimensions array)
       (save-png width height "~/Pictures/result.png" array))))
-
-
 
 
 ;; (print (vectorize-image *test-image*))
