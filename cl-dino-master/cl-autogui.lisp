@@ -98,111 +98,117 @@
         (return-from check-row nil))
         ))))
 
-;; принимает 2 массива изображений и точку, от которой их рано склеить
-;; возвращает склеенный массив
 (defun append-image (image-up image-down y-point)
-  ;; (format t "~% image-up ~A image-down ~A y-point ~A"
-  ;;         (array-dimensions image-up) (array-dimensions image-down) y-point)
+  "Принимает 2 массива изображений и высоту,
+   где второе изображение будет наложено на первое.
+   Изображения должны быть одинаковой ширины.
+   Возвращает склеенный массив"
   (destructuring-bind (height width colors)
       (array-dimensions image-down)
-    (format t "~% ~A ~A ~A " height width colors)
-    (let* ((append-height (- (* height 2) 1))
-           (append-image-array (make-array `(,append-height ,width ,colors)
-                                           :element-type '(unsigned-byte 8))))
+    (let* ((new-dims  (list (+ height y-point) width colors))
+           (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
       ;; копируем первую картинку в новый массив до точки склейки
-      (do ((y 0 (+ y 1)))
-          ((= y y-point))
-        (do ((x 0 (+ x 1)))
-            ((= x width))
-          (do ((z 0 (+ z 1)))
-              ((= z colors))
-            (setf (aref append-image-array y x z) (aref image-up y x z)))))
-      ;; копируем втрую картинку
-      (do ((y-new y-point (+ y-new 1))
-           (y 0 (+ y 1)))
-          ((= y height) append-image-array)
-        (do ((x 0 (+ x 1)))
-            ((= x width))
-          (do ((z 0 (+ z 1)))
-              ((= z colors))
-            (setf (aref append-image-array y-new x z) (aref image-up y x z))))))))
+      (do ((qy 0 (incf qy)))
+          ((= qy y-point))
+        (do ((qx 0 (incf qx)))
+            ((= qx width))
+          (do ((qz 0 (incf qz)))
+              ((= qz colors))
+            (setf (aref image-new qy qx qz)
+                  (aref image-up qy qx qz)))))
+      ;; копируем вторую картинку
+      (do ((ny y-point (incf ny))
+           (ry 0 (incf ry)))
+          ((= ry height))
+        (do ((rx 0 (incf rx)))
+            ((= rx width))
+          (do ((rz 0 (incf rz)))
+              ((= rz colors))
+            (setf (aref image-new ny rx rz)
+                  (aref image-up ry rx rz)))))
+      image-new)))
+
+;; TEST: append (non-grayscale) image
+(block ttt
+  (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+         (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+         (array (append-image arr1 arr2 200)))
+    (destructuring-bind (height width  &rest rest)
+        (array-dimensions array)
+      (save-png width height "~/Pictures/result.png" array))))
 
 
-(defun my-vectorize-image (image)
-  "Превращает массив (высота; ширина; цвет),
-   где сначала идут все X-точки нулевой строки, потом первой, итд"
-  (let ((idx 0)
-        (result (make-array (reduce #'* (array-dimensions image))
-                            :element-type '(unsigned-byte 8))))
-    (do ((y 0 (+ 1 y)))
-        ((= y (array-dimension image 0)) result)
-      (do ((x 0 (+ 1 x)))
-          ((= x (array-dimension image 1)))
-        (do ((z 0 (+ 1 z)))
-            ((= z (array-dimension image 2)))
-          (setf (aref result idx)
-                (aref image y x z))
-          (incf idx))))))
 
-(defun vectorize-image (image)
-  "Превращает массив size-X столбцов по size-Y точек в линейный,
-   где сначала идут все X-точки нулевой строки, потом первой, итд"
-  (let ((idx 0)
-        (result (make-array (reduce #'* (array-dimensions image))
-                            :element-type '(unsigned-byte 8))))
-    (loop for dx from 0 to (- (array-dimension image 1) 1) :do
-         (loop for dy from 0 to (- (array-dimension image 0) 1) :do
-              (loop for dz from 0 to (- (array-dimension image 2) 1) :do
-                   (setf (aref result idx)
-                         (aref image dy dx dz))
-                   (incf idx))))
-    result))
 
 ;; (print (vectorize-image *test-image*))
 
-(defun save-png (width height pathname-str image)
+(defun save-png (width height pathname-str image
+                 &optional (color-type :truecolor-alpha))
   (let* ((png (make-instance 'zpng:png :width width :height height
-                             :color-type :truecolor-alpha
-                             :image-data image)))
+                             :color-type color-type))
+         (vector (make-array ;; displaced vector - need copy for save
+                  (* height width (zpng:samples-per-pixel png))
+                  :displaced-to image :element-type '(unsigned-byte 8))))
+    ;; Тут применен потенциально опасный трюк, когда мы создаем
+    ;; объект PNG без данных, а потом добавляем в него данные,
+    ;; используя неэкспортируемый writer.
+    ;; Это нужно чтобы получить третью размерность массива,
+    ;; который мы хотим передать как данные и при этом
+    ;; избежать создания для этого временного объекта
+    (setf (zpng::%image-data png) (copy-seq vector))
     (zpng:write-png png pathname-str)))
+
+
+;; ;; TEST: saving loaded data
+;; (let* ((from "~/Pictures/snap2.png")
+;;        (to   "~/Pictures/snap3.png")
+;;        (image-data (load-png from)))
+;;   (destructuring-bind (height width depth)
+;;       (array-dimensions image-data)
+;;     (save-png width height to image-data)))
+
+;; ;; TEST: saving screenshot data
+;; (let* ((to   "~/Pictures/snap4.png")
+;;        (image-data (x-snapshot)))
+;;   (destructuring-bind (height width depth)
+;;       (array-dimensions image-data)
+;;     (save-png width height to image-data)))
+
+
 
 (defun binarization (image &optional threshold)
-  (let ((dims (array-dimensions image)))
-    (let ((result (make-array (butlast dims) :element-type '(unsigned-byte 8))))
-      (loop for dx from 0 to (- (array-dimension image 1) 1) :do
-           (loop for dy from 0 to (- (array-dimension image 0) 1) :do
-                (loop for dz from 0 to (- (array-dimension image 2) 1) :do
-                     (let ((avg (floor (+ (aref image dy dx 1)
-                                          (aref image dy dx 0)
-                                          (aref image dy dx 2))
-                                       3)))
-                       (when threshold
-                         (if (< threshold avg)
-                             (setf avg 255)
-                             (setf avg 0)))
-                       (setf (aref result dy dx) avg)))))
-      result)))
-
-
-(defun vectorize-image-gray (image)
-  "Превращает массив size-X столбцов по size-Y точек в линейный,
-   где сначала идут все X-точки нулевой строки, потом первой, итд"
-  (let ((idx 0)
-        (result (make-array (reduce #'* (array-dimensions image))
-                            :element-type '(unsigned-byte 8))))
-    (loop for dx from 0 to (- (array-dimension image 1) 1) :do
-         (loop for dy from 0 to (- (array-dimension image 0) 1) :do
-              (setf (aref result idx)
-                    (aref image dy dx))
-              (incf idx)))
+  (let* ((dims (array-dimensions image))
+         (new-dims (cond ((equal 3 (length dims))  (butlast dims))
+                         ((equal 2 (length dims))  dims)
+                         (t (error 'binarization-error))))
+         (result (make-array new-dims :element-type '(unsigned-byte 8))))
+    (macrolet ((cycle (&body body)
+                 `(do ((y 0 (incf y)))
+                      ((= y (array-dimension image 0)))
+                    (do ((x 0 (incf x)))
+                        ((= x (array-dimension image 1)))
+                      ,@body))))
+      (cond ((equal 3 (length dims))
+             (cycle (do ((z 0 (incf z)))
+                        ((= z (array-dimension image 2)))
+                      (let ((avg (floor (+ (aref image y x 0)
+                                           (aref image y x 1)
+                                           (aref image y x 2))
+                                        3)))
+                        (when threshold
+                          (if (< threshold avg)
+                              (setf avg 255)
+                              (setf avg 0)))
+                        (setf (aref result y x) avg)))))
+            ((equal 2 (length dims))
+             (cycle (let ((avg (aref image y x)))
+                      (when threshold
+                        (if (< threshold avg)
+                            (setf avg 255)
+                            (setf avg 0)))
+                      (setf (aref result y x) avg))))
+            (t (error 'binarization-error))))
     result))
-
-(defun save-png-gray (width height pathname-str image)
-  (let* ((png (make-instance 'zpng:png :width width :height height
-                             :color-type :grayscale
-                             :image-data image)))
-    (zpng:write-png png pathname-str)))
-
 
 
 ;; Ошибка, возникающая когда мы пытаемся прочитать png
@@ -216,17 +222,33 @@
 
 (defun load-png (pathname-str)
   "Возвращает массив size-X столбцов по size-Y точек,
-     где столбцы идут слева-направо, а точки в них - сверху-вниз"
+   где столбцы идут слева-направо, а точки в них - сверху-вниз
+   ----
+   В zpng есть указание на возможные варианты COLOR:
+   ----
+         (defmethod samples-per-pixel (png)
+           (ecase (color-type png)
+             (:grayscale 1)
+             (:truecolor 3)
+             (:indexed-color 1)
+             (:grayscale-alpha 2)
+             (:truecolor-alpha 4)))
+  "
   (let* ((png (png-read:read-png-file pathname-str))
          (image-data (png-read:image-data png))
          (color (png-read:colour-type png))
-         (result
-          (make-array ;; меняем размерности X и Y местами
-           `(,(array-dimension image-data 1)
-              ,(array-dimension image-data 0)
-              ,(array-dimension image-data 2))
-           :element-type (cond ((equal color :TRUECOLOR-ALPHA) '(unsigned-byte 8))
-                               (t (error 'unk-png-color-type :color color))))))
+         (dims (cond ((or (equal color :truecolor-alpha)
+                          (equal color :truecolor))
+                      (list (array-dimension image-data 1)
+                            (array-dimension image-data 0)
+                            (array-dimension image-data 2)))
+                     ((or (equal color :grayscale)
+                          (equal color :greyscale))
+                      (list (array-dimension image-data 1)
+                            (array-dimension image-data 0)))
+                     (t (error 'unk-png-color-type :color color))))
+         (result ;; меняем размерности X и Y местами
+          (make-array dims :element-type '(unsigned-byte 8))))
     ;; (format t "~% new-arr ~A "(array-dimensions result))
     ;; ширина, высота, цвет => высота, ширина, цвет
     (macrolet ((cycle (&body body)
@@ -234,16 +256,24 @@
                       ((= y (array-dimension result 0)))
                     (do ((x 0 (incf x)))
                         ((= x (array-dimension result 1)))
-                      (do ((z 0 (incf z)))
-                          ((= z (array-dimension result 2)))
-                        ,@body)))))
-      (cond ((equal color :TRUECOLOR-ALPHA)
-             (cycle (setf (aref result y x z)
-                          (aref image-data x y z))))
+                      ,@body))))
+      (cond ((or (equal color :truecolor-alpha)
+                 (equal color :truecolor))
+             (cycle (do ((z 0 (incf z)))
+                        ((= z (array-dimension result 2)))
+                      (setf (aref result y x z)
+                            (aref image-data x y z)))))
+            ((or (equal color :grayscale)
+                 (equal color :greyscale))
+             (cycle (setf (aref result y x)
+                          (aref image-data x y))))
             (t (error 'unk-png-color-type :color color)))
       result)))
 
-;; (assert (equalp (load-png *test-path*)
+;; ;; TEST: equality screenshot and load-file-data
+;; (assert (equalp (progn
+;;                   (x-snapshot :path "~/Pictures/snap2.png")
+;;                   (load-png "~/Pictures/snap2.png"))
 ;;                 (x-snapshot)))
 
 
@@ -254,24 +284,7 @@
 ;;       (array-dimensions image)
 ;;     (save-png-gray dw dh "cell1.png" (vectorize-image-gray image))))
 
-(block ttt
-(x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
-            :path "~/Pictures/test0.png")
-(x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
-            :path "~/Pictures/test1.png")
-(let* ((arr1 (load-png "~/Pictures/test0.png"))
-       (arr2 (load-png "~/Pictures/test0.png"))
-       (n (format t "~% arr1 ~A arr2 ~A" (array-dimensions arr1)
-               (array-dimensions arr1)))
-       (array (append-image arr1 arr2
-                            (- (array-dimension arr1 0) 1)))
-         (width (array-dimension array 1))
-       (height (array-dimension array 0)))
-  (format t "~% w ~A h ~A" width height)
-  (save-png width height
-            "~/Pictures/result.png"
-            (my-vectorize-image
-             array))))
+
 
 ;; (block test
 ;;   (open-browser "/usr/bin/firefox"
@@ -619,21 +632,21 @@
   (def x-press '(t nil)))
 
 (defun raw-image->png (data width height)
-  (let ((png (make-instance 'zpng:png :width width :height height
+  (let* ((png (make-instance 'zpng:png :width width :height height
                              :color-type :truecolor-alpha
-                             :image-data data)))
-    (let ((image-array (zpng:data-array png)))
+                             :image-data data))
+         (data (zpng:data-array png)))
     (dotimes (y height)
       (dotimes (x width)
         ;; BGR -> RGB, ref code: https://goo.gl/slubfW
         ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
-        (rotatef (aref image-array y x 0) (aref image-array y x 2))
-        (setf (aref image-array y x 3) 255)))
-    png)))
+        (rotatef (aref data y x 0) (aref data y x 2))
+        (setf (aref data y x 3) 255)))
+    png))
 
 (multiple-value-bind (default-width default-height) (x-size)
   (defun x-snapshot (&key (x *default-x*) (y *default-y*)
-                       (width  *default-width*) (height *default-height*)
+                       (width  *default-width*) (height *default-heght*)
                        path)
     ;; "Return RGB data array (The dimensions correspond to the height, width,
     ;; and pixel components, see comments in x-snapsearch for more details),
@@ -656,6 +669,10 @@
                 (png? (zpng:write-png image path))
                 (t (error "Only PNG file is supported"))))
             (zpng:data-array image))))))
+
+;; ;; TEST: save screenshot
+;; (x-snapshot :path "~/Pictures/snap1.png")
+
 
 ;; (defun start ()
 ;;   (do ((i 0 (+ 1 i)))
