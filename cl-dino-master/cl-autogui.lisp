@@ -105,6 +105,7 @@
   ;;         (array-dimensions image-up) (array-dimensions image-down) y-point)
   (destructuring-bind (height width colors)
       (array-dimensions image-down)
+    (format t "~% ~A ~A ~A " height width colors)
     (let* ((append-height (- (* height 2) 1))
            (append-image-array (make-array `(,append-height ,width ,colors)
                                            :element-type '(unsigned-byte 8))))
@@ -114,18 +115,17 @@
         (do ((x 0 (+ x 1)))
             ((= x width))
           (do ((z 0 (+ z 1)))
-              ((= x colors))
+              ((= z colors))
             (setf (aref append-image-array y x z) (aref image-up y x z)))))
       ;; копируем втрую картинку
       (do ((y-new y-point (+ y-new 1))
            (y 0 (+ y 1)))
-          ((= y height))
+          ((= y height) append-image-array)
         (do ((x 0 (+ x 1)))
             ((= x width))
           (do ((z 0 (+ z 1)))
-              ((= x colors))
-            (setf (aref append-image-array y x z) (aref image-up y x z)))))
-      append-image-array)))
+              ((= z colors))
+            (setf (aref append-image-array y-new x z) (aref image-up y x z))))))))
 
 
 (defun my-vectorize-image (image)
@@ -243,8 +243,8 @@
             (t (error 'unk-png-color-type :color color)))
       result)))
 
-(assert (equalp (load-png *test-path*)
-                (x-snapshot))
+;; (assert (equalp (load-png *test-path*)
+;;                 (x-snapshot)))
 
 
 
@@ -254,35 +254,52 @@
 ;;       (array-dimensions image)
 ;;     (save-png-gray dw dh "cell1.png" (vectorize-image-gray image))))
 
+(block ttt
+(x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+            :path "~/Pictures/test0.png")
+(x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+            :path "~/Pictures/test1.png")
+(let* ((arr1 (load-png "~/Pictures/test0.png"))
+       (arr2 (load-png "~/Pictures/test0.png"))
+       (n (format t "~% arr1 ~A arr2 ~A" (array-dimensions arr1)
+               (array-dimensions arr1)))
+       (array (append-image arr1 arr2
+                            (- (array-dimension arr1 0) 1)))
+         (width (array-dimension array 1))
+       (height (array-dimension array 0)))
+  (format t "~% w ~A h ~A" width height)
+  (save-png width height
+            "~/Pictures/result.png"
+            (my-vectorize-image
+             array))))
 
+;; (block test
+;;   (open-browser "/usr/bin/firefox"
+;;                  *hh-teaser-url*)
+;;   (sleep 8)
+;;   (do ((i 0 (+ 1 i)))
+;;       ((= i 6))
+;;     (perform-key-action t 116)
+;;     (perform-key-action nil 116))
+;;   (sleep 1)
+;;  (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+;;              :path "/home/sonja/Pictures/test0.png")
+;;  (let* ((arr (load-png "~/Pictures/test0.png"))
+;;         (array (rewrite-array arr)))
+;;     (sleep 1)
+;;     (crop-teaser array
+;;                  "/home/sonja/Pictures/test0.png")
 
-(block test
-  (open-browser "/usr/bin/firefox"
-                 *hh-teaser-url*)
-  (sleep 8)
-  (do ((i 0 (+ 1 i)))
-      ((= i 6))
-    (perform-key-action t 116)
-    (perform-key-action nil 116))
-  (sleep 1)
- (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
-             :path "/home/sonja/Pictures/test0.png")
- (let* ((arr (load-png "~/Pictures/test0.png"))
-        (array (rewrite-array arr)))
-    (sleep 1)
-    (crop-teaser array
-                 "/home/sonja/Pictures/test0.png")
+;;     (let* ((image (load-png "~/Pictures/test0.png"))
+;;            (image (binarization image)))
+;;       (destructuring-bind (dw dh)
+;;           (array-dimensions image)
+;;         (save-png-gray dw dh "~/Pictures/test0.png" (vectorize-image-gray image))))
 
-    (let* ((image (load-png "~/Pictures/test0.png"))
-           (image (binarization image)))
-      (destructuring-bind (dw dh)
-          (array-dimensions image)
-        (save-png-gray dw dh "~/Pictures/test0.png" (vectorize-image-gray image))))
-
-    (sleep 1)
-    ;;(resize "/home/sonja/Pictures/test0.png")
-    (run-tess "/home/sonja/Pictures/test0.png" "/home/sonja/repo/org/cl-dino-master/out"
-              *langs*)))
+;;     (sleep 1)
+;;     ;;(resize "/home/sonja/Pictures/test0.png")
+;;     (run-tess "/home/sonja/Pictures/test0.png" "/home/sonja/repo/org/cl-dino-master/out"
+;;               *langs*)))
 
 ;; (block little-test
 ;;   ;; (open-browser "/usr/bin/firefox"
