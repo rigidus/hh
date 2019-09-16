@@ -66,19 +66,21 @@
 ;;     (save-png width height "~/Pictures/xor.png" new-arr)))
 
 
-;; (block test-get-xor-images
-;;   (let* ((arr-up (load-png "~/Pictures/test0.png"))
-;;          (arr-down (load-png "~/Pictures/test0.png"))
-;;          (result (analysis (append-xor arr-up arr-down 641)
-;;                            (append-image arr-up arr-down 641) 641)))
-;;     (format t " ~% ~A" result)))
+(time
+ (block test-get-xor-images-with-anaizis
+   (let* ((arr-up (load-png "~/Pictures/test0.png"))
+          (arr-down (load-png "~/Pictures/test0.png"))
+          (result (analysis (append-xor arr-up arr-down 641)
+                            (append-image arr-up arr-down 641) 641)))
+     (format t " ~% ~A" result))))
 
-!!!
-;; (block test-get-xor-images
-;;   (let* ((arr-up (load-png "~/Pictures/test0.png"))
-;;          (arr-down (load-png "~/Pictures/test0.png"))
-;;          (result (get-xor-images arr-up arr-down 0)))
-;;     (format t " ~% ~A" result)))
+
+(time
+ (block test-get-xor-images
+   (let* ((arr-up (load-png "~/Pictures/test0.png"))
+          (arr-down (load-png "~/Pictures/test0.png"))
+          (result (get-xor-images arr-up arr-down 0)))
+     (format t " ~% ~A" result))))
 
 ;; принимает 2 склеенных массива:
 ;; а) склееный массив из двух картинок с отксореной областью наложения
