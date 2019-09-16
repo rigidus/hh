@@ -57,87 +57,6 @@
 
 (defparameter *browser-path*  "/usr/bin/firefox")
 
-;; кажется, в хэш-таблицу ничего не записывается
-(defun get-xor-images (image-up image-down limit)
-  (let ((arrays (make-hash-table)))
-    (destructuring-bind (height width colors)
-        (array-dimensions image-up)
-      (do ((i limit (incf i)))
-          (( = i height))
-        ;; получаем склеенную картинку
-        (let* ((xor-image (append-xor image-up image-down i))
-               ;; узнаем количество черных точек на ней
-               (black (count-black xor-image)))
-          (format t "~% ~A" black)
-          (setf (gethash i arrays) black)))
-      arrays)))
-
-(defun count-black (image)
-  (destructuring-bind (height width colors)
-      (array-dimensions image)
-    (let ((black 0))
-      (do ((qy 0 (incf qy)))
-          (( = qy height))
-        (do ((qx 0 (incf qx)))
-            ((= qx width))
-          (if (and (eql 0 (aref image qy qx 0))
-                   (eql 0 (aref image qy qx 1))
-                   (eql 0 (aref image qy qx 2)))
-              (incf black))))
-      black)))
-
-
-(defun append-xor (image-up image-down limit)
-  ;;(let ((arrays (make-hash-table)))
-    ;; получили размерность верхнего изображения
-    (destructuring-bind (height width colors)
-        (array-dimensions image-up)
-         (let* ((new-dims  (list (+ height limit) width colors))
-                (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
-           ;; копируем первое изображение до дочки склейки в массив
-           (do ((qy 0 (incf qy)))
-               (( = qy limit))
-             (do ((qx 0 (incf qx)))
-                 ((= qx width))
-               (do ((qz 0 (incf qz)))
-                   ((= qz colors))
-                 (setf (aref image-new qy qx qz)
-                       (aref image-up qy qx qz)))))
-           ;; ксорим область наложения
-           ;; область определяется как расстояние от точки склейки до низа массива
-           (let ((image-down-y))
-             (do ((qy limit (incf qy))
-                  (qy2 0 (incf qy2)))
-                  (( = qy height) (setf image-down-y qy2))
-               (do ((qx 0 (incf qx)))
-                   ((= qx width))
-                 ;; сохраняем результат ксора области наложения в новый массив
-                 ;; + копируем значение альфа-канала
-                   (setf (aref image-new qy qx 0)
-                         (logxor (aref image-up qy qx 0)
-                                 (aref image-down qy2 qx 0))
-                         (aref image-new qy qx 1)
-                         (logxor (aref image-up qy qx 1)
-                                 (aref image-down qy2 qx 1))
-                         (aref image-new qy qx 2)
-                         (logxor (aref image-up qy qx 2)
-                                 (aref image-down qy2 qx 2))
-                         (aref image-new qy qx 3)
-                                 (aref image-down qy2 qx 3))
-                   ;;(format t "~% y ~A x ~A xor ~A" qy qx (aref image-new qy qx qz))
-                   ))
-                 ;; переписываем второе изображение в массив, начиная сразу
-                 ;; после области наложения
-                 (do ((qy height (incf qy))
-                      (qy2 image-down-y (incf qy2)))
-                     (( = qy (nth 0 new-dims)))
-                   (do ((qx 0 (incf qx)))
-                       ((= qx width))
-                     (do ((qz 0 (incf qz)))
-                         ((= qz colors))
-                       (setf (aref image-new qy qx qz)
-                             (aref image-down qy2 qx qz)))))
-               image-new))))
 
 ;; (let* ((arr-up (load-png "~/Pictures/test0.png"))
 ;;        (arr-down (load-png "~/Pictures/test0.png"))
@@ -147,11 +66,68 @@
 ;;     (format t "~% ~A" (count-black new-arr))
 ;;     (save-png width height "~/Pictures/xor.png" new-arr)))
 
-(block test-get-xor-images
-(let* ((arr-up (load-png "~/Pictures/test0.png"))
-       (arr-down (load-png "~/Pictures/test0.png"))
-       (arrs (get-xor-images arr-up arr-down 500)))))
 
+;; (block test-get-xor-images
+;;   (let* ((arr-up (load-png "~/Pictures/test0.png"))
+;;          (arr-down (load-png "~/Pictures/test0.png"))
+;;          (result (analysis (append-xor arr-up arr-down 641)
+;;                            (append-image arr-up arr-down 641) 641)))
+;;     (format t " ~% ~A" result)))
+
+(block test-get-xor-images
+  (let* ((arr-up (load-png "~/Pictures/test0.png"))
+         (arr-down (load-png "~/Pictures/test0.png"))
+         (result (get-xor-images arr-up arr-down 0)))
+    (format t " ~% ~A" result)))
+
+;; принимает 2 склеенных массива:
+;; а) склееный массив из двух картинок с отксореной областью наложения
+;; б) склееный массив из тех двух картинок без использования xor
+;; и точку склейки
+(defun analysis (xor-image nonxor-image y-point)
+  (destructuring-bind (height width colors)
+      (array-dimensions xor-image)
+    ;; узнаем высоту области пересечения. Считаем, что ширина соответствует ширине
+    ;; изображений
+    (let ((intesect-height (- height y-point))
+          (black 0))
+      (do ((qy y-point (incf qy)))
+          ((= qy height))
+        (do ((qx 0 (incf qx)))
+            ((= qx width))
+          (if (not (and (eql (aref xor-image qy qx 0)
+                        (aref nonxor-image qy qx 0))
+                   (eql (aref xor-image qy qx 1)
+                        (aref nonxor-image qy qx 1))
+                   (eql (aref xor-image qy qx 2)
+                        (aref nonxor-image qy qx 2))))
+              ;; если rgb двух пикселей не совпадают, значит, текущий пиксель в
+              ;; xor-image стал черным
+              (incf black))))
+          (let* ((pix-amount (* intesect-height width))
+                 (result (* (float (/ black pix-amount)) 100)))
+            (cons result y-point)))))
+
+;; возвращает массив конс-пар, где car - кол-во %, а cdr - координата Y, при склейке от
+;; которой было получено кол-во процентов совпадения пикселей
+(defun get-xor-images (image-up image-down limit)
+    (destructuring-bind (height width colors)
+        (array-dimensions image-up)
+      ;;(format t " ~% ~A ~A ~A" height width colors)
+      (let ((results (make-array (list (- height limit)) :initial-element nil)))
+        ;;(format t " ~% results ~A" (array-dimensions results))
+        (do ((i limit (incf i))
+             (idx 0 (incf idx)))
+            (( = i height))
+          ;;(format t " ~% ~A" i)
+        ;; получаем склеенную картинку
+        (let* ((xor-image (append-xor image-up image-down i))
+               ;; узнаем процент точек, которые стали черными
+               (black (analysis xor-image (append-image image-up image-down i)
+                                i)))
+          ;;(format t "~% ~A" black)
+          (setf (aref results idx) black)))
+      results)))
 
 (defun append-image (image-up image-down y-point)
   "Принимает 2 массива изображений и высоту,
@@ -183,14 +159,66 @@
                   (aref image-up ry rx rz)))))
       image-new)))
 
+(defun append-xor (image-up image-down limit)
+  ;;(let ((arrays (make-hash-table)))
+  ;; получили размерность верхнего изображения
+  (destructuring-bind (height width colors)
+      (array-dimensions image-up)
+    (let* ((new-dims  (list (+ height limit) width colors))
+           (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+      ;; копируем первое изображение до дочки склейки в массив
+      (do ((qy 0 (incf qy)))
+          (( = qy limit))
+        (do ((qx 0 (incf qx)))
+            ((= qx width))
+          (do ((qz 0 (incf qz)))
+              ((= qz colors))
+            (setf (aref image-new qy qx qz)
+                  (aref image-up qy qx qz)))))
+      ;; ксорим область наложения
+      ;; область определяется как расстояние от точки склейки до низа массива
+      (let ((image-down-y))
+        (do ((qy limit (incf qy))
+             (qy2 0 (incf qy2)))
+            (( = qy height) (setf image-down-y qy2))
+          (do ((qx 0 (incf qx)))
+              ((= qx width))
+            ;; сохраняем результат ксора области наложения в новый массив
+            ;; + копируем значение альфа-канала
+            (setf (aref image-new qy qx 0)
+                  (logxor (aref image-up qy qx 0)
+                          (aref image-down qy2 qx 0))
+                  (aref image-new qy qx 1)
+                  (logxor (aref image-up qy qx 1)
+                          (aref image-down qy2 qx 1))
+                  (aref image-new qy qx 2)
+                  (logxor (aref image-up qy qx 2)
+                          (aref image-down qy2 qx 2))
+                  (aref image-new qy qx 3)
+                  (aref image-down qy2 qx 3))
+            ;;(format t "~% y ~A x ~A xor ~A" qy qx (aref image-new qy qx qz))
+            ))
+        ;; переписываем второе изображение в массив, начиная сразу
+        ;; после области наложения
+        (do ((qy height (incf qy))
+             (qy2 image-down-y (incf qy2)))
+            (( = qy (nth 0 new-dims)))
+          (do ((qx 0 (incf qx)))
+              ((= qx width))
+            (do ((qz 0 (incf qz)))
+                ((= qz colors))
+              (setf (aref image-new qy qx qz)
+                    (aref image-down qy2 qx qz)))))
+        image-new))))
+
 ;; TEST: append (non-grayscale) image
-(block ttt
-  (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-         (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-         (array (append-image arr1 arr2 200)))
-    (destructuring-bind (height width  &rest rest)
-        (array-dimensions array)
-      (save-png width height "~/Pictures/result.png" array))))
+;; (block ttt
+;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+;;          (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+;;          (array (append-image arr1 arr2 200)))
+;;     (destructuring-bind (height width  &rest rest)
+;;         (array-dimensions array)
+;;       (save-png width height "~/Pictures/result.png" array))))
 
 
 ;; (print (vectorize-image *test-image*))
