@@ -75,12 +75,19 @@
      (format t " ~% ~A" result))))
 
 
-(time
- (block test-get-xor-images
-   (let* ((arr-up (load-png "~/Pictures/test0.png"))
-          (arr-down (load-png "~/Pictures/test0.png"))
-          (result (get-xor-images arr-up arr-down 0)))
-     (format t " ~% ~A" result))))
+(print (time
+        (block test-get-xor-images
+          ;; (open-browser "/usr/bin/firefox"
+          ;;               *hh-teaser-url*)
+          ;; (sleep 8)
+          ;; (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+          ;;             :path "/home/sonja/Pictures/test1.png")
+          ;; (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+          ;;             :path "/home/sonja/Pictures/test0.png")
+          (let* ((arr-up (load-png "~/Pictures/test0.png"))
+                 (arr-down (load-png "~/Pictures/test1.png"))
+                 (result (get-xor-images arr-up arr-down 0)))
+            (format t " ~% ~A" result)))))
 
 ;; принимает 2 склеенных массива:
 ;; а) склееный массив из двух картинок с отксореной областью наложения
