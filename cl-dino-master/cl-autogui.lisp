@@ -76,11 +76,13 @@
 
 
 (time
- (block test-get-xor-images
-   (let* ((arr-up (load-png "~/Pictures/test0.png"))
-          (arr-down (load-png "~/Pictures/test0.png"))
-          (result (get-xor-images arr-up arr-down 0)))
-     (format t " ~% ~A" result))))
+  (block test-get-xor-images
+    (let* ((arr-up (load-png "~/Pictures/test3.png"))
+           (arr-down (load-png "~/Pictures/test3.png"))
+           (result (sort (get-xor-images arr-up arr-down 0)
+                         #'(lambda (a b)
+                             (> (car a) (car b))))))
+      (format t " ~% ~A" result))))
 
 ;; принимает 2 склеенных массива:
 ;; а) склееный массив из двух картинок с отксореной областью наложения
@@ -131,35 +133,77 @@
           (setf (aref results idx) black)))
       results)))
 
+;; ------------------ append-image BEGIN
+
 (defun append-image (image-up image-down y-point)
   "Принимает 2 массива изображений и высоту,
    где второе изображение будет наложено на первое.
-   Изображения должны быть одинаковой ширины.
+   Изображения должны быть одинаковой ширины
+   и иметь одинаковое количество байт на пиксель.
    Возвращает склеенный массив"
-  (destructuring-bind (height width colors)
+  (destructuring-bind (height-down width-down &optional colors-down)
       (array-dimensions image-down)
-    (let* ((new-dims  (list (+ height y-point) width colors))
+    (let* ((new-height (+ height-down y-point))
+           (new-dims (if (null colors-down)
+                         (list new-height width-down)
+                         (list new-height width-down colors-down)))
            (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
-      ;; копируем первую картинку в новый массив до точки склейки
-      (do ((qy 0 (incf qy)))
-          ((= qy y-point))
-        (do ((qx 0 (incf qx)))
-            ((= qx width))
-          (do ((qz 0 (incf qz)))
-              ((= qz colors))
-            (setf (aref image-new qy qx qz)
-                  (aref image-up qy qx qz)))))
-      ;; копируем вторую картинку
-      (do ((ny y-point (incf ny))
-           (ry 0 (incf ry)))
-          ((= ry height))
-        (do ((rx 0 (incf rx)))
-            ((= rx width))
-          (do ((rz 0 (incf rz)))
-              ((= rz colors))
-            (setf (aref image-new ny rx rz)
-                  (aref image-up ry rx rz)))))
+      ;; макрос для прохода по блоку точек
+      (macrolet ((cycle ((py px height width &optional &body newline)
+                         &body body)
+                   `(do ((qy ,py (incf qy)))
+                        ((= qy ,height))
+                      (do ((qx ,px (incf qx)))
+                          ((= qx ,width))
+                        ,@body)
+                      ,@newline)))
+        ;; копируем первую картинку в новый массив
+        ;; от ее начала до точки склейки, или до ее конца,
+        ;; смотря что случиться раньше
+        (if (null colors-down)  ;; TODO: тут надо проверять цвета первой картинки
+            (cycle (0 0 (min height-down y-point) width-down)
+                   (setf (aref image-new qy qx)
+                         (aref image-up qy qx)))
+            ;; else
+            (cycle (0 0 (min height-down y-point) width-down)
+                   (do ((qz 0 (incf qz)))
+                       ((= qz colors-down))
+                     (setf (aref image-new qy qx qz)
+                           (aref image-up qy qx qz)))))
+        ;; копируем вторую картинку в новый массив
+        ;; от ее начала до конца
+        (if (null colors-down)
+            (let ((new-y y-point))
+              (cycle (0 0 height-down width-down (incf new-y))
+                     (setf (aref image-new new-y qx)
+                           (aref image-up qy qx))))
+            ;; else
+            (let ((new-y y-point))
+              (cycle (0 0 height-down width-down (incf new-y))
+                     (do ((rz 0 (incf rz)))
+                         ((= rz colors-down))
+                       (setf (aref image-new new-y qx rz)
+                             (aref image-up qy qx rz)))))))
       image-new)))
+
+;; (block test-append-image-fullcolor
+;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+;;          (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+;;          (array (append-image arr1 arr2 200)))
+;;     (destructuring-bind (height width  &rest rest)
+;;         (array-dimensions array)
+;;       (save-png width height "~/Pictures/result.png" array))))
+
+
+;; (block test-append-image-grayscale
+;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+;;          (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+;;          (array (append-image arr1 arr2 200)))
+;;     (destructuring-bind (height width  &rest rest)
+;;         (array-dimensions array)
+;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
+
+;; ------------------ append-image END
 
 (defun append-xor (image-up image-down limit)
   ;;(let ((arrays (make-hash-table)))
@@ -213,14 +257,6 @@
                     (aref image-down qy2 qx qz)))))
         image-new))))
 
-;; TEST: append (non-grayscale) image
-;; (block ttt
-;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-;;          (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-;;          (array (append-image arr1 arr2 200)))
-;;     (destructuring-bind (height width  &rest rest)
-;;         (array-dimensions array)
-;;       (save-png width height "~/Pictures/result.png" array))))
 
 
 ;; (print (vectorize-image *test-image*))
