@@ -66,77 +66,7 @@
 ;;     (save-png width height "~/Pictures/xor.png" new-arr)))
 
 
-(time
- (block test-get-xor-images-with-anaizis
-   (let* ((arr-up (load-png "~/Pictures/test0.png"))
-          (arr-down (load-png "~/Pictures/test0.png"))
-          (result (analysis (append-xor arr-up arr-down 641)
-                            (append-image arr-up arr-down 641) 641)))
-     (format t " ~% ~A" result))))
 
-
-(print (time
-        (block test-get-xor-images
-          ;; (open-browser "/usr/bin/firefox"
-          ;;               *hh-teaser-url*)
-          ;; (sleep 8)
-          ;; (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
-          ;;             :path "/home/sonja/Pictures/test1.png")
-          ;; (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
-          ;;             :path "/home/sonja/Pictures/test0.png")
-          (let* ((arr-up (load-png "~/Pictures/test0.png"))
-                 (arr-down (load-png "~/Pictures/test1.png"))
-                 (result (get-xor-images arr-up arr-down 0)))
-            (format t " ~% ~A" result)))))
-
-;; принимает 2 склеенных массива:
-;; а) склееный массив из двух картинок с отксореной областью наложения
-;; б) склееный массив из тех двух картинок без использования xor
-;; и точку склейки
-(defun analysis (xor-image nonxor-image y-point)
-  (destructuring-bind (height width colors)
-      (array-dimensions xor-image)
-    ;; узнаем высоту области пересечения. Считаем, что ширина соответствует ширине
-    ;; изображений
-    (let ((intesect-height (- height y-point))
-          (black 0))
-      (do ((qy y-point (incf qy)))
-          ((= qy height))
-        (do ((qx 0 (incf qx)))
-            ((= qx width))
-          (if (not (and (eql (aref xor-image qy qx 0)
-                        (aref nonxor-image qy qx 0))
-                   (eql (aref xor-image qy qx 1)
-                        (aref nonxor-image qy qx 1))
-                   (eql (aref xor-image qy qx 2)
-                        (aref nonxor-image qy qx 2))))
-              ;; если rgb двух пикселей не совпадают, значит, текущий пиксель в
-              ;; xor-image стал черным
-              (incf black))))
-          (let* ((pix-amount (* intesect-height width))
-                 (result (* (float (/ black pix-amount)) 100)))
-            (cons result y-point)))))
-
-;; возвращает массив конс-пар, где car - кол-во %, а cdr - координата Y, при склейке от
-;; которой было получено кол-во процентов совпадения пикселей
-(defun get-xor-images (image-up image-down limit)
-    (destructuring-bind (height width colors)
-        (array-dimensions image-up)
-      ;;(format t " ~% ~A ~A ~A" height width colors)
-      (let ((results (make-array (list (- height limit)) :initial-element nil)))
-        ;;(format t " ~% results ~A" (array-dimensions results))
-        (do ((i limit (incf i))
-             (idx 0 (incf idx)))
-            (( = i height))
-          ;;(format t " ~% ~A" i)
-        ;; получаем склеенную картинку
-        (let* ((xor-image (append-xor image-up image-down i))
-               ;; узнаем процент точек, которые стали черными
-               (black (analysis xor-image (append-image image-up image-down i)
-                                i)))
-          ;;(format t "~% ~A" black)
-          (setf (aref results idx) black)))
-      results)))
 
 ;; ------------------ append-image BEGIN
 
@@ -300,6 +230,60 @@
 ;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
 
 ;; ------------------ append-xor END
+
+
+;; ------------------ analysis BEGIN
+
+(defun analysis (xored-image y-point)
+  (destructuring-bind (height width &optional colors)
+      (array-dimensions xored-image)
+    (let ((intesect-height (- height y-point)) ;; высота пересечения
+          (black 0))
+      (macrolet ((cycle ((py px height width)
+                         &body body)
+                   `(do ((qy ,py (incf qy)))
+                        ((= qy ,height))
+                      (do ((qx ,px (incf qx)))
+                          ((= qx ,width))
+                        ,@body))))
+        (if colors
+            (cycle (y-point 0 height width)
+                   (when (and (eql (aref xored-image qy qx 0) 0)
+                              (eql (aref xored-image qy qx 1) 0)
+                              (eql (aref xored-image qy qx 2) 0))
+                     (incf black)))
+            ;; else
+            (cycle (y-point 0 height width)
+                   (when (eql (aref xored-image qy qx) 0)
+                     (incf black))))
+        (let* ((pix-amount (* intesect-height width))
+               (result (float (/ black pix-amount))))
+          result)))))
+
+(defun get-merge-results (image-up image-down)
+  (do ((vy 0 (incf vy)))
+      ((= vy (+ (array-dimension image-up 0)
+                (array-dimension image-down 0))))
+    (format t "~%: =vy: ~A = ~A"
+            vy
+            (analysis
+             (append-xor image-up image-down vy)
+             vy))))
+
+;; (block test-merge-results-fullcolor
+;;   (time
+;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 192 :height 108))
+;;           (arr2 (x-snapshot :x 0 :y 0 :width 192 :height 108)))
+;;      (get-merge-results arr1 arr2))))
+
+;; (block test-merge-results-grayscale
+;;   (time
+;;    (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+;;           (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300))))
+;;      (get-merge-results arr1 arr2))))
+
+;; ------------------ analysis END
+
 
 
 ;; (print (vectorize-image *test-image*))
