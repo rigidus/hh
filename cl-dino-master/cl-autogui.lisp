@@ -111,19 +111,20 @@
             (let ((new-y y-point))
               (cycle (0 0 height-down width-down (incf new-y))
                      (setf (aref image-new new-y qx)
-                           (aref image-up qy qx))))
+                           (aref image-down qy qx))))
             ;; else
             (let ((new-y y-point))
               (cycle (0 0 height-down width-down (incf new-y))
                      (do ((rz 0 (incf rz)))
                          ((= rz colors-down))
                        (setf (aref image-new new-y qx rz)
-                             (aref image-up qy qx rz)))))))
+                             (aref image-down qy qx rz)))))))
       image-new)))
+
 
 ;; (block test-append-image-fullcolor
 ;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-;;          (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+;;          (arr2 (x-snapshot :x 100 :y 100 :width 755 :height 300))
 ;;          (array (append-image arr1 arr2 200)))
 ;;     (destructuring-bind (height width  &rest rest)
 ;;         (array-dimensions array)
@@ -189,7 +190,7 @@
                 (cycle (0 0 height-down width-down (incf new-y))
                        (setf (aref image-new new-y qx)
                              (logxor (aref image-new new-y qx)
-                                     (aref image-up qy qx)))))
+                                     (aref image-down qy qx)))))
               ;; else
               (let ((new-y y-point))
                 (cycle (0 0 height-down width-down (incf new-y))
@@ -197,7 +198,7 @@
                            ((= rz colors-down))
                          (setf (aref image-new new-y qx rz)
                                (logxor (aref image-new new-y qx rz)
-                                       (aref image-up qy qx rz)))))
+                                       (aref image-down qy qx rz)))))
                 ;; поправим излишне поксоренный альфа-канал (если он есть)
                 ;; но только там где изображения перекрываются (!)
                 (when (equal 4 colors-down)
@@ -215,7 +216,7 @@
 
 ;; (block test-append-xor-fullcolor
 ;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-;;          (arr2 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+;;          (arr2 (x-snapshot :x 100 :y 100 :width 755 :height 300))
 ;;          (array (append-xor arr1 arr2 200)))
 ;;     (destructuring-bind (height width  &rest rest)
 ;;         (array-dimensions array)
@@ -239,6 +240,7 @@
       (array-dimensions xored-image)
     (let ((intesect-height (- height y-point)) ;; высота пересечения
           (black 0))
+      (format t "~% intesect-height ~A " intesect-height)
       (macrolet ((cycle ((py px height width)
                          &body body)
                    `(do ((qy ,py (incf qy)))
@@ -270,11 +272,11 @@
              (append-xor image-up image-down vy)
              vy))))
 
-;; (block test-merge-results-fullcolor
-;;   (time
-;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 192 :height 108))
-;;           (arr2 (x-snapshot :x 0 :y 0 :width 192 :height 108)))
-;;      (get-merge-results arr1 arr2))))
+(block test-merge-results-fullcolor
+  (time
+   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 192 :height 108))
+          (arr2 (x-snapshot :x 0 :y 0 :width 192 :height 108)))
+     (get-merge-results arr1 arr2))))
 
 ;; (block test-merge-results-grayscale
 ;;   (time
@@ -284,9 +286,59 @@
 
 ;; ------------------ analysis END
 
+;;------------------- BEGIN
+
+    (defun make-bit-image (image-data)
+     (destructuring-bind (height width)
+         (array-dimensions image-data)
+        (let* ((new-width (+ (logior width 7) 1))
+               (bit-array (make-array (list height new-width)
+                                    :element-type 'bit)))
+         (do ((qy 0 (incf qy)))
+             ((= qy height))
+           (do ((qx 0 (incf qx)))
+               ((= qx width))
+             ;;(format t "~% y ~A x ~A elt ~A" qy qx (aref image-data qy qx))
+             (unless (equal (aref image-data qy qx) 0)
+               (setf (bit bit-array qy qx) 1))))
+         bit-array)))
+
+;; (block make-bit-image
+;;   (x-snapshot :x 0 :y 0 :width 45 :height 20 :path "~/Pictures/test.png")
+;; (let ((bit-arr1
+;;        (make-bit-image (binarization (load-png "~/Pictures/test.png") 100 )))
+;;       )
+;;       ;; (bit-arr2
+;;       ;;  (make-bit-image (binarization (load-png "~/Pictures/test.png") 100 ))))
+
+;;   (destructuring-bind (height width)
+;;       (array-dimensions bit-arr1)
+;;     (do ((qy 0 (incf qy)))
+;;         ((= qy height))
+;;       (format t "~%")
+;;       (do ((qx 0 (incf qx)))
+;;           ((= qx width))
+;;         (format t "~A" (aref bit-arr qy qx)))))
+
+;;   ))
 
 
-;; (print (vectorize-image *test-image*))
+;; (block ttt333
+;;   (x-snapshot :x 0 :y 0 :width 45 :height 20 :path "~/Pictures/test.png")
+;;   (let* ((arr (binarization (load-png "~/Pictures/test.png") 100 )))
+;;   (destructuring-bind (height width)
+;;             (array-dimensions arr)
+;;           (save-png width height "~/Pictures/test.png" arr :grayscale))))
+
+TEST binarization
+(let* ((arr (binarization (load-png "~/Pictures/test0.png") 200)))
+  (destructuring-bind (height width)
+      (array-dimensions arr)
+    ;;(format t "~% h ~A w ~A" height width)
+    (save-png width height "~/Pictures/test3.png" arr :grayscale)))
+
+;;------------------- END
+
 
 (defun save-png (width height pathname-str image
                  &optional (color-type :truecolor-alpha))
@@ -306,8 +358,8 @@
 
 
 ;; ;; TEST: saving loaded data
-;; (let* ((from "~/Pictures/snap2.png")
-;;        (to   "~/Pictures/snap3.png")
+;; (let* ((from "~/Pictures/test0.png")
+;;        (to   "~/Pictures/test1.png")
 ;;        (image-data (load-png from)))
 ;;   (destructuring-bind (height width depth)
 ;;       (array-dimensions image-data)
@@ -315,7 +367,7 @@
 
 ;; ;; TEST: saving screenshot data
 ;; (let* ((to   "~/Pictures/snap4.png")
-;;        (image-data (x-snapshot)))
+;;        (image-data (x-snapshot :x 0 :y 0 :width 20 :height 30)))
 ;;   (destructuring-bind (height width depth)
 ;;       (array-dimensions image-data)
 ;;     (save-png width height to image-data)))
@@ -432,17 +484,17 @@
 
 
 
-;; (block test
-;;   (open-browser "/usr/bin/firefox"
-;;                  *hh-teaser-url*)
-;;   (sleep 8)
-;;   (do ((i 0 (+ 1 i)))
-;;       ((= i 6))
-;;     (perform-key-action t 116)
-;;     (perform-key-action nil 116))
-;;   (sleep 1)
-;;  (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
-;;              :path "/home/sonja/Pictures/test0.png")
+(block test
+  (open-browser "/usr/bin/firefox"
+                 *hh-teaser-url*)
+  (sleep 8)
+  (do ((i 0 (+ 1 i)))
+      ((= i 6))
+    (perform-key-action t 116)
+    (perform-key-action nil 116))
+  (sleep 1)
+ (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
+             :path "/home/sonja/Pictures/test0.png"))
 ;;  (let* ((arr (load-png "~/Pictures/test0.png"))
 ;;         (array (rewrite-array arr)))
 ;;     (sleep 1)
@@ -657,6 +709,7 @@
         (format t "~% check-width: it's not a teaser"))))
 
 
+
 (defun open-browser (browser-path url)
   (let ((proc (sb-ext:run-program
                `,browser-path
@@ -713,7 +766,7 @@
 (defun x-move (x y)
   (if (and (integerp x) (integerp y))
       (with-default-display-force (d)
-        (xlib/xtest:fake-motion-event d x y))
+        (xtest:fake-motion-event d x y))
       (error "Integer only for position, (x: ~S, y: ~S)" x y)))
 
 (defun mklist (obj)
@@ -734,7 +787,7 @@
 (defun perform-mouse-action (press? button &key x y)
   (and x y (x-move x y))
   (with-default-display-force (d)
-    (xlib/xtest:fake-button-event d button press?)))
+    (xtest:fake-button-event d button press?)))
 
 (macrolet ((def (name actions)
              `(defun-with-actions ,name
@@ -766,7 +819,7 @@
 
 (defun perform-key-action (press? keycode) ; use xev to get keycode
   (with-default-display-force (d)
-    (xlib/xtest:fake-key-event d keycode press?)))
+    (xtest:fake-key-event d keycode press?)))
 
 (macrolet ((def (name actions)
              `(defun-with-actions ,name (keycode)
