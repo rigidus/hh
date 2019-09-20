@@ -141,7 +141,6 @@
 
 ;; ------------------ append-image END
 
-
 ;; ------------------ append-xor BEGIN
 
 (defun append-xor (image-up image-down y-point)
@@ -194,37 +193,46 @@
               ;; else
               (let ((new-y y-point))
                 (cycle (0 0 height-down width-down (incf new-y))
+                       ;; ксорим 3 цвета
                        (do ((rz 0 (incf rz)))
                            ((= rz colors-down))
                          (setf (aref image-new new-y qx rz)
                                (logxor (aref image-new new-y qx rz)
-                                       (aref image-down qy qx rz)))))
+                                       (aref image-down qy qx rz))))
+                       ;; копируем альфа-канал
+                           (setf (aref image-new new-y qx 3)
+                                 (aref image-down qy qx 3))
+                       )))
+
+          ;; ЭТОТ КУСОК МОЖНО УБРАТЬ
                 ;; поправим излишне поксоренный альфа-канал (если он есть)
                 ;; но только там где изображения перекрываются (!)
-                (when (equal 4 colors-down)
-                  (let ((new-y y-point))
-                    (cycle (0 0 (- height-up y-point) width-up (incf new-y))
-                           (do ((rz 0 (+ colors-down rz)))
-                               ((= rz colors-down))
-                             ;; (setf (aref image-new new-y qx (+ 3 rz))
-                             ;;       #xFF)
-                             ;; проверка правильности заксоривания -
-                             ;; можно убрать после отладки
-                             ;; (setf (aref image-new new-y qx (+ 2 rz)) #xFF)
-                             )))))))
+                ;; (when (equal 4 colors-down)
+                ;;   (let ((new-y y-point))
+                ;;     (cycle (0 0 (- height-up y-point) width-up (incf new-y))
+                ;;            (do ((rz 0 (+ colors-down rz)))
+                ;;                ((= rz colors-down))
+                ;;              (setf (aref image-new new-y qx (+ 3 rz))
+                ;;                    #xFF)
+                ;;              ;; ;; проверка правильности заксоривания -
+                ;;              ;; ;; можно убрать после отладки
+                ;;              ;; (setf (aref image-new new-y qx (+ 2 rz)) #xFF)
+                ;;              ))))
+                )
         image-new))))
 
-;; (block test-append-xor-fullcolor
-;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-;;          (arr2 (x-snapshot :x 100 :y 100 :width 755 :height 300))
-;;          (array (append-xor arr1 arr2 200)))
-;;     (destructuring-bind (height width  &rest rest)
-;;         (array-dimensions array)
-;;       (save-png width height "~/Pictures/result.png" array))))
+;; (time
+;;  (block test-append-xor-fullcolor
+;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 500 :height 300))
+;;           (arr2 (x-snapshot :x 0 :y 100 :width 500 :height 300))
+;;           (result (append-xor arr1 arr2 200)))
+;;      (destructuring-bind (height width  &rest rest)
+;;          (array-dimensions result)
+;;        (save-png width height "~/Pictures/result.png" result)))))
 
 ;; (block test-append-xor-grayscale
 ;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
-;;          (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+;;          (arr2 (binarization (x-snapshot :x 0 :y 100 :width 755 :height 300)))
 ;;          (array (append-xor arr1 arr2 200)))
 ;;     (destructuring-bind (height width  &rest rest)
 ;;         (array-dimensions array)
@@ -238,6 +246,7 @@
 (defun analysis (xored-image y-point)
   (destructuring-bind (height width &optional colors)
       (array-dimensions xored-image)
+    (format t "~% y-point ~A height ~A" y-point height)
     (let ((intesect-height (- height y-point)) ;; высота пересечения
           (black 0))
       (format t "~% intesect-height ~A " intesect-height)
@@ -264,19 +273,20 @@
 
 (defun get-merge-results (image-up image-down)
   (do ((vy 0 (incf vy)))
-      ((= vy (+ (array-dimension image-up 0)
-                (array-dimension image-down 0))))
+      ;; ((= vy (+ (array-dimension image-up 0)
+      ;;           (array-dimension image-down 0))))
+    ((= vy (array-dimension image-up 0)))
     (format t "~%: =vy: ~A = ~A"
             vy
             (analysis
              (append-xor image-up image-down vy)
              vy))))
 
-(block test-merge-results-fullcolor
-  (time
-   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 192 :height 108))
-          (arr2 (x-snapshot :x 0 :y 0 :width 192 :height 108)))
-     (get-merge-results arr1 arr2))))
+;; (block test-merge-results-fullcolor
+;;   (time
+;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 688))
+;;           (arr2 (x-snapshot :x 0 :y 30 :width 755 :height 688)))
+;;      (get-merge-results arr1 arr2))))
 
 ;; (block test-merge-results-grayscale
 ;;   (time
@@ -288,39 +298,48 @@
 
 ;;------------------- BEGIN
 
-    (defun make-bit-image (image-data)
-     (destructuring-bind (height width)
-         (array-dimensions image-data)
-        (let* ((new-width (+ (logior width 7) 1))
-               (bit-array (make-array (list height new-width)
-                                    :element-type 'bit)))
-         (do ((qy 0 (incf qy)))
-             ((= qy height))
-           (do ((qx 0 (incf qx)))
-               ((= qx width))
-             ;;(format t "~% y ~A x ~A elt ~A" qy qx (aref image-data qy qx))
-             (unless (equal (aref image-data qy qx) 0)
-               (setf (bit bit-array qy qx) 1))))
-         bit-array)))
+(defun make-bit-image (image-data)
+  (destructuring-bind (height width &optional colors)
+      (array-dimensions image-data)
+    ;; функция может работать только с бинарными изобажениями
+    (assert (null colors))
+    (let* ((new-width (+ (logior width 7) 1))
+           (bit-array (make-array (list height new-width)
+                                  :element-type 'bit)))
+      (do ((qy 0 (incf qy)))
+          ((= qy height))
+        (do ((qx 0 (incf qx)))
+            ((= qx width))
 
+          (unless (equal (aref image-data qy qx) 0)
+            (setf (bit bit-array qy qx) 1))))
+      bit-array)))
+
+;; TEST
 ;; (block make-bit-image
-;;   (x-snapshot :x 0 :y 0 :width 45 :height 20 :path "~/Pictures/test.png")
-;; (let ((bit-arr1
-;;        (make-bit-image (binarization (load-png "~/Pictures/test.png") 100 )))
-;;       )
-;;       ;; (bit-arr2
-;;       ;;  (make-bit-image (binarization (load-png "~/Pictures/test.png") 100 ))))
+;;     (time
+;;      (let* ((bit-arr1
+;;              (make-bit-image (binarization (x-snapshot :x 0 :y 0 :width 10 :height 10)
+;;                                            200 )))
+;;             (bit-arr2
+;;              (make-bit-image (binarization (x-snapshot :x 0 :y 0 :width 10 :height 10)
+;;                                            200 ))))
+;;             (get-merge-results bit-arr1 bit-arr2))))
 
-;;   (destructuring-bind (height width)
-;;       (array-dimensions bit-arr1)
-;;     (do ((qy 0 (incf qy)))
-;;         ((= qy height))
-;;       (format t "~%")
-;;       (do ((qx 0 (incf qx)))
-;;           ((= qx width))
-;;         (format t "~A" (aref bit-arr qy qx)))))
+;;-----------------------------END
 
-;;   ))
+
+;; (result (append-xor bit-arr1 bit-arr2 5)))
+;; (destructuring-bind (height width)
+;;     (array-dimensions result)
+;;   (do ((qy 0 (incf qy)))
+;;       ((= qy height))
+;;     (format t "~%")
+;;     (do ((qx 0 (incf qx)))
+;;         ((= qx width))
+;;       (format t "~A" (aref result qy qx)))))
+
+
 
 
 ;; (block ttt333
@@ -330,12 +349,12 @@
 ;;             (array-dimensions arr)
 ;;           (save-png width height "~/Pictures/test.png" arr :grayscale))))
 
-TEST binarization
-(let* ((arr (binarization (load-png "~/Pictures/test0.png") 200)))
-  (destructuring-bind (height width)
-      (array-dimensions arr)
-    ;;(format t "~% h ~A w ~A" height width)
-    (save-png width height "~/Pictures/test3.png" arr :grayscale)))
+;; TEST binarization
+;; (let* ((arr (binarization (load-png "~/Pictures/test0.png") 200)))
+;;   (destructuring-bind (height width)
+;;       (array-dimensions arr)
+;;     ;;(format t "~% h ~A w ~A" height width)
+;;     (save-png width height "~/Pictures/test3.png" arr :grayscale)))
 
 ;;------------------- END
 
