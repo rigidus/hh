@@ -82,13 +82,14 @@
                       ,@newline)))
         ;; копируем первую картинку в новый массив
         ;; от ее начала до точки склейки, или до ее конца,
-        ;; смотря что случиться раньше
+        ;; смотря что случится раньше
         (if (null colors-down)  ;; TODO: тут надо проверять цвета первой картинки
-            (cycle (0 0 (min height-down y-point) width-down)
+            ;;(cycle (0 0 (min height-down y-point) width-down)
+            (cycle (0 0 y-point width-down)
                    (setf (aref image-new qy qx)
                          (aref image-up qy qx)))
             ;; else
-            (cycle (0 0 (min height-down y-point) width-down)
+            (cycle (0 0 y-point width-down)
                    (do ((qz 0 (incf qz)))
                        ((= qz colors-down))
                      (setf (aref image-new qy qx qz)
@@ -234,16 +235,16 @@
           ;; для бинарных изображений
           (if (null colors-down)
               (let ((new-y y-point))
-                (cycle (0 0 (- height-down y-point) width-down (incf new-y))
+                (cycle (0 0 (- height-up y-point) width-down (incf new-y))
                        (setf (aref image-new qy qx)
                              (logxor (aref image-up new-y qx)
                                      (aref image-down qy qx)))))
               ;; else
               (let ((new-y y-point))
-                (cycle (0 0 (- height-down y-point) width-down (incf new-y))
+                (cycle (0 0 (- height-up y-point) width-down (incf new-y))
                        ;; ксорим 3 цвета
                        (do ((rz 0 (incf rz)))
-                           ((= rz colors-down))
+                           ((= rz (- colors-down 1)))
                          (setf (aref image-new qy qx rz)
                                (logxor (aref image-up new-y qx rz)
                                        (aref image-down qy qx rz))))
@@ -316,7 +317,7 @@
 (defun get-merge-results (image-up image-down &optional (cnt 0))
   ;; создаем вектор, в который будут записаны результаты
   (let ((results))
-    (format t "~% cnt ~A" cnt)
+ ;;   (format t "~% cnt ~A" cnt)
     (do ((vy cnt (incf vy)))
         ((= vy (array-dimension image-up 0)))
       ;; (format t "~%: =vy: ~A = ~A"
@@ -333,24 +334,35 @@
      results))
 
 ;; отличается от get-merge-results только вызовом xor-area вместо append-xor
-;; (defun get-area-merge-results (image-up image-down &optional (cnt 0))
-;;   ;; создаем вектор, в который будут записаны результаты
-;;   (let ((results))
-;;     (format t "~% cnt ~A" cnt)
-;;     (do ((vy cnt (incf vy)))
-;;         ((= vy (array-dimension image-up 0)))
-;;       (setf results
-;;             (cons (cons
-;;                    (analysis
-;;                     (xor-area image-up image-down vy)
-;;                     vy) vy) results)))
-;;     results))
+(defun get-area-merge-results (image-up image-down &optional (cnt 0))
+  ;; создаем вектор, в который будут записаны результаты
+  ;; (let ((results (make-hash-table)))
+  (let ((results ))
+   ;;(format t "~% cnt ~A" cnt)
+    (do ((vy cnt (incf vy)))
+        ((= vy (array-dimension image-up 0)))
+      ;; (push (analysis
+      ;;        (xor-area image-up image-down vy) vy)
+      ;;       (gethash vy results))
+      (setf results
+            (cons (cons
+                   (analysis
+                    (append-xor image-up image-down vy)
+                    vy) vy) results))
+      )
+    results))
 
-;; (block test-merge-results-fullcolor
-;;   (time
-;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 100 :height 100))
-;;           (arr2 (x-snapshot :x 0 :y 0 :width 100 :height 100)))
-;;      (get-merge-results arr1 arr2))))
+;; (block test-get-area-merge-results
+;;   ;;(time
+;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 100 :height 100))
+;;          (arr2 (x-snapshot :x 0 :y 0 :width 100 :height 100))
+;;          (table (get-area-merge-results arr1 arr2))
+;;          ;;(gethash 7 table)
+;;          (res (maphash #'(lambda (a b)
+;;                            (format t "~% ~A ~A" a b)
+;;                            (> (car a) (car b)))
+;;                        table)))))
+;;)
 
 ;; (block test-merge-results-grayscale
 ;;   (time
@@ -369,37 +381,37 @@
 ;; передать в тесеракт
 
 ;; создает свиток из 2х бинаризорованных изображений
-(defun make-roll (image-up image-down &optional idx)
+(defun make-roll (image-up image-down)
   (destructuring-bind (height-up width-up &optional colors-up)
       (array-dimensions image-up)
     (format t "~% height-up ~A" height-up)
     (destructuring-bind (height-down width-down &optional colors-down)
         (array-dimensions image-down)
       (assert (and (null colors-up) (null colors-down)))
-  (let* ((bit-arr-up (make-bit-image image-up))
-         (bit-arr-down (make-bit-image image-down))
-         (results-lst (get-merge-results bit-arr-up bit-arr-down
-                                         (- height-up height-down))))
-    (if (null results-lst)
-        ;; возвращаем nil
-        (return-from make-roll nil)
-        ;; else  сортируем результаты
-        (let ((sorted-result (sort results-lst #'(lambda (a b)
-                                                   (> (car a) (car b))))))
-          ;; если максимальное совпадение было найдено, когда координата Y = 0,
-          ;; то мы считаем, избражения были одинаковыми и страница выдачи кончилась
-          (if (eql (- height-up height-down)
-                   (cdr (nth 0 sorted-result)))
-              (return-from make-roll -1)
-              ;; else скливаем 2 изображения
-              (let ((roll-image (append-image image-up image-down
-                                              (cdr (nth 0 sorted-result)))))
-                (destructuring-bind (height width &optional colors-down)
-                    (array-dimensions roll-image)
-                  (save-png width height
-                            (format nil "/home/sonja/Pictures/ttt~A.png" idx)
-                            roll-image :grayscale)
-              roll-image)))))))))
+      (let* ((bit-arr-up (make-bit-image image-up))
+             (bit-arr-down (make-bit-image image-down))
+             (results (get-area-merge-results bit-arr-up bit-arr-down
+                                              (- height-up height-down))))
+        (if (null results)
+            ;; возвращаем nil
+            (return-from make-roll nil)
+            ;; else  сортируем результаты
+            (let ((sorted-result (sort results
+                                       #'(lambda (a b)
+                                           (> (car a) (car b))))))
+              ;;(format t "~% ~A ~A"
+              ;;(cdr (nth 0 sorted-result)) (- height-up height-down))
+              ;;(format t "~% ~A " sorted-result)
+              ;; если максимальное совпадение было найдено на начальной точке писка,
+              ;; то мы считаем, избражения были одинаковыми и страница выдачи кончилась
+              (if (eql (- height-up height-down)
+                       (cdr (nth 0 sorted-result)))
+                  (return-from make-roll -1)
+                  ;; else скливаем 2 изображения
+                  (let ((roll-image (append-image image-up image-down
+                                                  (cdr (nth 0 sorted-result)))))
+                    roll-image
+                    ))))))))
 
 (defun screen-all-images (&optional image-path-up image-path-down idx)
   ;; изображения есть?
@@ -410,6 +422,7 @@
                     :path "~/Pictures/test0.png")
         ;; PageDown
         (perform-key-action t 117)
+        (sleep 0.1)
         (perform-key-action nil 117)
         (sleep 0.2)
         (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
@@ -417,7 +430,7 @@
         (screen-all-images "~/Pictures/test0.png" "~/Pictures/test1.png" 2))
       ;; есть!
       (let ((roll (make-roll (binarization (load-png image-path-up) 200)
-                             (binarization (load-png image-path-down) 200) idx)))
+                             (binarization (load-png image-path-down) 200))))
         ;; склейка удалась?
         ;; (свиток не пустой и не -1. -1 = конец страницы выдачи)
         (if (not (or (null roll) (eql -1 roll)))
@@ -428,8 +441,9 @@
               (save-png width height "~/Pictures/result.png" roll :grayscale)
               ;; PageDown
               (perform-key-action t 117)
+              (sleep 0.1)
               (perform-key-action nil 117)
-              (sleep 0.2)
+              (sleep 0.1)
               ;; делаем следующий скрин
               (x-snapshot :x 440 :y 100 :width  *snap-width* :height 668
                           :path (format nil "/home/sonja/Pictures/test~A.png" idx ))
@@ -444,16 +458,23 @@
             ;; изображения кончились
             (return-from screen-all-images image-path-up)))))
 
+;; этот тест бесконечен: конец страницы не находится, приходится убивать процесс
+;; (time
+;;     (block screen-all-images-test
+;;       (open-browser "/usr/bin/firefox"
+;;                     *hh-teaser-url*)
+;;       (sleep 8)
+;;       (screen-all-images))
+;; )
 
-;; получить все тизеры со страницы:
-;; сделать все скрины, пока страница не кончится
-;; (как определить, что она кончилась, не сравнивая изображения ?)
-    ;; (block screen-all-images-test
-    ;;   (open-browser "/usr/bin/firefox"
-    ;;                 *hh-teaser-url*)
-    ;;   (sleep 8)
-    ;;   (screen-all-images))
+;; Если захочешь использовать тот тест, открой hh в браузере, пока идет задержка,
+;; вручную переключись в окно с hh
+;; (time
+;;  (block screen-all-images-test
+;;    (sleep 8)
+;;    (screen-all-images)))
 
+;; с этим все норм, склеит 2 картинки
 ;; (time
 ;;  (block make-roll-test
 ;;    (open-browser "/usr/bin/firefox"
@@ -473,6 +494,8 @@
 ;;              (array-dimensions roll)
 ;;            (save-png width height "~/Pictures/reault.png" roll :grayscale))))))
 
+;; проверка поведения, если переданы одинаковые картинки (вероятность правильного
+;; результата 50/50
 ;; (block make-roll-test-same
 ;;   (x-snapshot :x 0 :y 0 :width  100 :height 100
 ;;               :path "~/Pictures/test0.png")
@@ -480,10 +503,8 @@
 ;;   (x-snapshot :x 0 :y 0 :width 100 :height 100
 ;;               :path "~/Pictures/test1.png")
 ;;   (let ((roll (make-roll (binarization (load-png "~/Pictures/test0.png") 200)
-;;                          (binarization (load-png "~/Pictures/test1.png") 200)))
-;;         (destructuring-bind (height width)
-;;             (array-dimensions roll)
-;;           (save-png width height "~/Pictures/reault.png" roll :grayscale)))
+;;                          (binarization (load-png "~/Pictures/test1.png") 200))))
+;; ))
 
 ;; как найти место вырезания?
 ;; как найти тизер на свитке?
@@ -535,13 +556,6 @@
 
 
 
-
-;; (block ttt333
-;;   (x-snapshot :x 0 :y 0 :width 45 :height 20 :path "~/Pictures/test.png")
-;;   (let* ((arr (binarization (load-png "~/Pictures/test.png") 100 )))
-;;   (destructuring-bind (height width)
-;;             (array-dimensions arr)
-;;           (save-png width height "~/Pictures/test.png" arr :grayscale))))
 
 ;; TEST binarization
 ;; (let* ((arr (binarization (load-png "~/Pictures/test0.png") 200)))
