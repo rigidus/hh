@@ -467,8 +467,8 @@
                     :path "~/Pictures/test1.png")
         (screen-all-images "~/Pictures/test0.png" "~/Pictures/test1.png" 2))
       ;; есть!
-      (let ((roll (make-roll (binarization (load-png image-path-up) 200)
-                             (binarization (load-png image-path-down) 200))))
+      (let ((roll (make-roll (binarization (load-png image-path-up) 127)
+                             (binarization (load-png image-path-down) 127))))
         ;; склейка удалась?
         ;; (свиток не пустой и не -1. -1 = конец страницы выдачи)
         (if (not (or (null roll) (eql -1 roll)))
