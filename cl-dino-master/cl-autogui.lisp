@@ -272,12 +272,14 @@
 ;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
 
 ;; (block xor-area-test
-;;   (let* ((arr1 (binarization (load-png "~/Pictures/test1.png") 200))
-;;          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
-;;                   (array (xor-area arr1 arr2 150)))
+;;   (time
+;;   (let* ((arr1 (binarization (load-png "~/Pictures/result.png") 200))
+;;          (arr2 (binarization (load-png "~/Pictures/test10.png") 200))
+;;          (array (xor-area arr1 arr2
+;;                           (- (array-dimension arr1 0) (array-dimension arr2 0)))))
 ;;              (destructuring-bind (height width  &rest rest)
-;;                  (array-dimensions array)
-;;                (save-png width height "~/Pictures/area.png" array :grayscale))))
+;;                 (array-dimensions array)
+;;                (save-png width height "~/Pictures/area.png" array :grayscale)))))
 
 ;; ------------------ append-xor END
 
@@ -338,31 +340,15 @@
   ;; создаем вектор, в который будут записаны результаты
   ;; (let ((results (make-hash-table)))
   (let ((results ))
-   ;;(format t "~% cnt ~A" cnt)
+    ;;(format t "~% cnt ~A" cnt)
     (do ((vy cnt (incf vy)))
         ((= vy (array-dimension image-up 0)))
-      ;; (push (analysis
-      ;;        (xor-area image-up image-down vy) vy)
-      ;;       (gethash vy results))
       (setf results
             (cons (cons
                    (analysis
                     (append-xor image-up image-down vy)
-                    vy) vy) results))
-      )
+                    vy) vy) results)))
     results))
-
-;; (block test-get-area-merge-results
-;;   ;;(time
-;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 100 :height 100))
-;;          (arr2 (x-snapshot :x 0 :y 0 :width 100 :height 100))
-;;          (table (get-area-merge-results arr1 arr2))
-;;          ;;(gethash 7 table)
-;;          (res (maphash #'(lambda (a b)
-;;                            (format t "~% ~A ~A" a b)
-;;                            (> (car a) (car b)))
-;;                        table)))))
-;;)
 
 ;; (block test-merge-results-grayscale
 ;;   (time
@@ -370,15 +356,61 @@
 ;;           (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300))))
 ;;      (get-merge-results arr1 arr2))))
 
+;; 111 sec (!!!)
+;; (block new-test
+;;   (time
+;;    (let* ((arr1 (binarization (load-png "~/Pictures/result.png") 200))
+;;           (arr2 (binarization (load-png "~/Pictures/test10.png") 200))
+;;           (lst (get-area-merge-results arr1 arr2
+;;                            (- (array-dimension arr1 0) (array-dimension arr2 0))))))))
+
 ;; ------------------ analysis END
 
 ;;------------------- crop BEGIN
 
-;; собрать тизеры со страницы (как понять, что страница выдачи кончилась?)
-;; найти самый черный снимок (создать массив для каждых 2х склеенный снимков, найти в нем)
+;; собрать тизеры со страницы
+;; найти самый черный снимок
 ;; склеить все
-;; нарезать (?)
+;; нарезать
+;; - склеенную картинку перевести в битовый массив
+;; - если встречается  10 пустых строк подряд, считаем, что тизер кончился: сохранить
+;; y-point начала и конца
+;; передаем в функцию нарезки: скопирует массив от одной точки, до другой,
+;; сохраним картинку
 ;; передать в тесеракт
+
+(defun find-teasers (image)
+  (destructuring-bind (height width)
+      (array-dimensions image)
+    (let* ((bit-array (make-bit-image image))
+           (teasers-results)
+           (white 0))
+  (macrolet ((cycle ((py px height width)
+                     &body body)
+               `(do ((qy ,py (incf qy)))
+                    ((= qy ,height))
+                  (do ((qx ,px (incf qx)))
+                      ((= qx ,width))
+                    ,@body))))
+    (cycle (0 0 height width)
+           ;; если все пиксели текущего ряда белые
+           (if (eql (aref bit-array qy qx) 0)
+               (if (eql qx (- width 1))
+               (progn
+                 ;; увеличиваем счетчик
+                 (incf white)
+                 ;; если мы встретили 30 подряд белых рядов
+                 (if (eql white 30)
+                     ;; считаем, что это пробел между тизерами
+                     (progn
+                       (setf white 0)
+                       ;; сохраняем точку, на которой остановились
+                       (setf teasers-results (cons qy teasers-results))))))
+               ;; если пиксель не белый, обнуляем счетчик
+               (setf white 0)))
+  (reverse teasers-results)))))
+
+;;(format t " ~% ~A" (find-teasers  (load-png "~/Pictures/result.png")))
 
 ;; создает свиток из 2х бинаризорованных изображений
 (defun make-roll (image-up image-down)
@@ -390,28 +422,34 @@
       (assert (and (null colors-up) (null colors-down)))
       (let* ((bit-arr-up (make-bit-image image-up))
              (bit-arr-down (make-bit-image image-down))
-             (results (get-area-merge-results bit-arr-up bit-arr-down
-                                              (- height-up height-down))))
+             (y-point (- height-up height-down))
+             (results (get-area-merge-results bit-arr-up bit-arr-down y-point)))
         (if (null results)
             ;; возвращаем nil
             (return-from make-roll nil)
             ;; else  сортируем результаты
-            (let ((sorted-result (sort results
-                                       #'(lambda (a b)
-                                           (> (car a) (car b))))))
+            (let* ((sorted-result (sort results
+                                        #'(lambda (a b)
+                                            (> (car a) (car b)))))
+                   (max-result (nth 0 sorted-result)))
               ;;(format t "~% ~A ~A"
               ;;(cdr (nth 0 sorted-result)) (- height-up height-down))
               ;;(format t "~% ~A " sorted-result)
-              ;; если максимальное совпадение было найдено на начальной точке писка,
-              ;; то мы считаем, избражения были одинаковыми и страница выдачи кончилась
-              (if (eql (- height-up height-down)
-                       (cdr (nth 0 sorted-result)))
-                  (return-from make-roll -1)
-                  ;; else скливаем 2 изображения
-                  (let ((roll-image (append-image image-up image-down
-                                                  (cdr (nth 0 sorted-result)))))
-                    roll-image
-                    ))))))))
+
+              ;; проверяем конс-пары, имеющие максимальный % черных точек
+              (do ((i 0 (incf i)))
+                  ((= i (length sorted-result)))
+                ;; если у текущей конс-пары максимальный % черных точек
+                (if (eql (car (nth i sorted-result)) (car max-result))
+                    ;; и при этом ее y-point = начальному y-point
+                    (if (eql (cdr (nth i sorted-result)) y-point)
+                        ;; мы считаем, что изображения одинаковые
+                        (return-from make-roll -1))
+                    ;; else скливаем 2 изображения
+                    (let ((roll-image (append-image image-up image-down
+                                                    (cdr max-result))))
+                      (return-from make-roll roll-image)
+                      )))))))))
 
 (defun screen-all-images (&optional image-path-up image-path-down idx)
   ;; изображения есть?
@@ -458,7 +496,7 @@
             ;; изображения кончились
             (return-from screen-all-images image-path-up)))))
 
-;; этот тест бесконечен: конец страницы не находится, приходится убивать процесс
+;; будет выполняться оооочень долго
 ;; (time
 ;;     (block screen-all-images-test
 ;;       (open-browser "/usr/bin/firefox"
@@ -494,8 +532,7 @@
 ;;              (array-dimensions roll)
 ;;            (save-png width height "~/Pictures/reault.png" roll :grayscale))))))
 
-;; проверка поведения, если переданы одинаковые картинки (вероятность правильного
-;; результата 50/50
+;; проверка поведения, если переданы одинаковые картинки
 ;; (block make-roll-test-same
 ;;   (x-snapshot :x 0 :y 0 :width  100 :height 100
 ;;               :path "~/Pictures/test0.png")
@@ -530,17 +567,11 @@
             (setf (bit bit-array qy qx) 1))))
       bit-array)))
 
-;; TEST
+;;TEST
 ;; (block make-bit-image
 ;;     (time
 ;;      (let* ((bit-arr1
-;;              (make-bit-image (binarization (x-snapshot :x 0 :y 0 :width 10 :height 10)
-;;                                            200 )))
-;;             (bit-arr2
-;;              (make-bit-image (binarization (x-snapshot :x 0 :y 0 :width 10 :height 10)
-;;                                            200 ))))
-;;             (get-merge-results bit-arr1 bit-arr2))))
-
+;;              (make-bit-image (load-png "~/Pictures/result.png")))))))
 ;;-----------------------------END
 
 
