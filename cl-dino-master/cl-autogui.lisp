@@ -379,39 +379,6 @@
 ;; сохраним картинку
 ;; передать в тесеракт
 
-(defun find-teasers (image)
-  (destructuring-bind (height width)
-      (array-dimensions image)
-    (let* ((bit-array (make-bit-image image))
-           (teasers-results)
-           (white 0))
-  (macrolet ((cycle ((py px height width)
-                     &body body)
-               `(do ((qy ,py (incf qy)))
-                    ((= qy ,height))
-                  (do ((qx ,px (incf qx)))
-                      ((= qx ,width))
-                    ,@body))))
-    (cycle (0 0 height width)
-           ;; если все пиксели текущего ряда белые
-           (if (eql (aref bit-array qy qx) 0)
-               (if (eql qx (- width 1))
-               (progn
-                 ;; увеличиваем счетчик
-                 (incf white)
-                 ;; если мы встретили 30 подряд белых рядов
-                 (if (eql white 30)
-                     ;; считаем, что это пробел между тизерами
-                     (progn
-                       (setf white 0)
-                       ;; сохраняем точку, на которой остановились
-                       (setf teasers-results (cons qy teasers-results))))))
-               ;; если пиксель не белый, обнуляем счетчик
-               (setf white 0)))
-  (reverse teasers-results)))))
-
-;;(format t " ~% ~A" (find-teasers  (load-png "~/Pictures/result.png")))
-
 ;; создает свиток из 2х бинаризорованных изображений
 (defun make-roll (image-up image-down)
   (destructuring-bind (height-up width-up &optional colors-up)
@@ -450,6 +417,7 @@
                                                     (cdr max-result))))
                       (return-from make-roll roll-image)
                       )))))))))
+
 
 (defun screen-all-images (&optional image-path-up image-path-down idx)
   ;; изображения есть?
@@ -543,8 +511,112 @@
 ;;                          (binarization (load-png "~/Pictures/test1.png") 200))))
 ;; ))
 
-;; как найти место вырезания?
-;; как найти тизер на свитке?
+(defun find-teasers (image &optional (space 45))
+  (destructuring-bind (height width &colors)
+      (array-dimensions image)
+    (assert (null colors))
+    (let* ((bit-array (make-bit-image image))
+           (teasers-results)
+           (white 0))
+      (macrolet ((cycle ((py px height width)
+                         &body body)
+                   `(do ((qy ,py (incf qy)))
+                        ((= qy ,height))
+                      (do ((qx ,px (incf qx)))
+                          ((= qx ,width))
+                        ,@body))))
+        (cycle (0 0 height width)
+               ;; если все пиксели текущего ряда белые
+               (if (eql (aref bit-array qy qx) 0)
+                   (if (eql qx (- width 1))
+                       (progn
+                         ;; увеличиваем счетчик
+                         (incf white)
+                         ;; если мы встретили 45 подряд белых рядов
+                         (if (eql white space)
+                             ;; считаем, что это пробел между тизерами
+                             (progn
+                               (setf white 0)
+                               ;; сохраняем точку, на которой остановились
+                               (setf teasers-results (cons qy teasers-results))))))
+                   ;; если пиксель не белый, обнуляем счетчик
+                   (setf white 0)))
+        (reverse teasers-results)))))
+
+;; (block find-teasers-test
+;;   (let ((arr (make-roll (binarization (load-png "~/Pictures/test0.png") 165)
+;;                         (binarization (load-png "~/Pictures/test1.png") 165))))
+;;     (destructuring-bind (height width)
+;;         (array-dimensions arr)
+;;       (save-png width height "~/Pictures/res1.png" arr :grayscale))
+;;     (format t " ~% ~A" (find-teasers  (load-png "~/Pictures/res1.png"))))
+;;   )
+
+;; функция скопирует в новый массив необходимую часть, "вырезав" ее из картинки
+(defun crop-image (image begin end)
+  ;; считаем, что ширина вырезаемой картинки = ширине всего изображения
+  (destructuring-bind (height width &optional colors)
+      (array-dimensions image)
+    (let* ((new-dims (if (null colors)
+                         (list (- end begin) width)
+                         (list (- end begin) width colors)))
+           (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+      (macrolet ((cycle ((py px ny nx height width &optional &body newline)
+                         &body body)
+                   `(do ((qy ,py (incf qy))
+                         (ny ,ny (incf ny)))
+                        ((= qy ,height))
+                      (do ((qx ,px (incf qx))
+                           (nx ,nx (incf nx)))
+                          ((= qx ,width))
+                        ,@body)
+                      ,@newline)))
+        ;; если изображение бинарное
+        (if (null colors)
+            (cycle (begin 0 0 0 end width)
+                   (setf (aref image-new ny nx)
+                         (aref image qy qx)))
+            ;; else
+            (cycle (begin 0 0 0 end width)
+                   (do ((qz 0 (incf qz)))
+                       ((= qz colors))
+                     (setf (aref image-new ny nx qz)
+                           (aref image qy qx qz)))))
+        image-new))))
+
+;; вырезает все тизеры с картинки
+(defun crop-teasers (image &optional (i 0) lst-coordinate-y)
+  ;; получаем Y координаты тизеров, если не заданы
+  (if (null lst-coordinate-y)
+      (progn
+        (setf lst-coordinate-y (find-teasers image))
+        (crop-teasers image i lst-coordinate-y))
+      (if (eql (length lst-coordinate-y) 1)
+          (return-from crop-teasers 0)
+          (let ((new-image
+                 (crop-image image (nth 0 lst-coordinate-y) (nth 1 lst-coordinate-y))))
+            (destructuring-bind (height width &optional colors)
+                (array-dimensions new-image)
+              (if (null colors)
+                  (save-png width height
+                            (format nil "/home/sonja/Pictures/crop~A.png" i)
+                            new-image :grayscale)
+                  (save-png width height
+                            (format nil "/home/sonja/Pictures/crop~A.png" i)
+                            new-image))
+              (crop-teasers image (incf i) (cdr lst-coordinate-y)))))))
+
+;; (block crop-image-test
+;;   (let ((crop (crop-image
+;;                (binarization (load-png "~/Pictures/res1.png") 168) 255 334)))
+;;     (destructuring-bind (height width)
+;;         (array-dimensions  crop)
+;;       (save-png width height "~/Pictures/crop1.png" crop :grayscale))))
+
+
+;; (block crop-teasers
+;;   (crop-teasers (binarization (load-png "~/Pictures/res1.png") 168)))
+
 ;;-------------------- crop END
 
 ;;------------------- BEGIN
