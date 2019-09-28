@@ -6,7 +6,7 @@
   #-cffi
   (ql:quickload 'cffi)
   (ql:quickload "png-read")
-  )
+  (ql:quickload :bt-semaphore))
 
 (defpackage #:cl-autogui
   (:use #:common-lisp #:xlib)
@@ -132,6 +132,109 @@
 
 ;; ------------------ append-xor BEGIN
 
+
+;; (block thread-test
+;;   (defparameter *thread-test* 0)
+
+;;   (defun thread-incf (i)
+;;     (format t "~% incf ~A " i)
+;;     (incf *thread-test*))
+
+;;   (defun thread-decf (i)
+;;     (format t "~% decf ~A " i)
+;;     (decf *thread-test*))
+
+;;   ;; без мьютекса
+;;   (defun test ()
+;;     (do ((i 0 (incf i)))
+;;         (( = i 10) *thread-test*)
+;;       (format t "~% *thread-test* ~A " *thread-test*)
+;;       (bt:make-thread
+;;        (lambda ()
+;;          (do ((i 0 (incf i)))
+;;              (( = i 10000) *thread-test*)
+;;            (thread-incf i))
+;;          (do ((i 0 (incf i)))
+;;              (( = i 10000) *thread-test*)
+;;            (thread-decf i))))))
+
+;;   ;; с мьюетксом
+;;   (defun test-mutex ()
+;;     (do ((i 0 (incf i)))
+;;         (( = i 10) *thread-test*)
+;;       (format t "~% *thread-test* ~A " *thread-test*)
+;;       (bt:make-thread
+;;        (lambda ()
+;;          (do ((i 0 (incf i)))
+;;              (( = i 10000) *thread-test*)
+;;            (bt:with-lock-held (*lock*)
+;;              (thread-incf i)))
+;;          (do ((i 0 (incf i)))
+;;              (( = i 10000) *thread-test*)
+;;            (bt:with-lock-held (*lock*)
+;;              (thread-decf i)))))))
+
+;;    )
+;;   ;; (test)
+;;   ;;  (test-mutex)
+
+;; (block paralelism
+;;   (defun ttt (a)
+;;     (* a 2))
+;;   ;; как собрать данные с двух потоков?
+;;   ;; заводим переменную, каждый из двух потоков по очереди пушит туда значение
+;;   (defparameter result '())
+;;   (defvar *lock* (bt:make-lock))
+;;   (defun get-results (lst)
+;;     (let ((res)
+;;           (lock (bt:make-lock))
+;;          )
+;;     (bt:make-thread
+;;      (lambda ()
+;;          (with-open-file (out "t.txt" :direction :output
+;;                               :if-exists :supersede)
+;;        (do ((i 0 (incf i)))
+;;            (( = i (floor (/ (length lst) 2))))
+;;          (setf result (cons (bt:with-lock-held (lock)
+;;                                 (ttt (nth i lst)))
+;;                             result))
+;;          (format out " ~% res ~A i ~A" result i)))))
+
+;;        (bt:make-thread
+;;         (lambda ()
+;;           (with-open-file (output "t2.txt" :direction :output
+;;                               :if-exists :supersede)
+;;           (do ((i (floor (/ (length lst) 2)) (incf i)))
+;;               (( = i  (length lst)))
+;;             (setf result (cons (bt:with-lock-held (lock)
+;;                                    (ttt (nth i lst)))
+;;                                result))
+;;             (format output " ~% res ~A i ~A" result i))))
+;;        ;;(format t "~% res ~A" result)
+;;         ) result))
+
+;;   (defun test ()
+;;     (let* ((test 0)
+;;            (thread-name)
+;;            (thread (bt:make-thread
+;;                     (lambda ()
+;;                       (sleep 5)
+;;                       (incf test)) :name thread-name)))
+;;       (tagbody
+;;        top
+;;          (if (bt:thread-alive-p thread)
+;;              (progn
+;;                (sleep 1)
+;;                (go top))
+;;              (return-from test test)))))
+
+;; (test)
+
+;; (format t "~% ~A" result)
+;; (get-results '(1 2 3 4 5 6 7 8 9 10))
+
+;;(floor (/ 2 (length '(1 2 3 4 5 6 7 8 9 10))))
+
 (defun append-xor (image-up image-down y-point)
   "Принимает 2 массива изображений и высоту,
    где второе изображение будет наложено на первое
@@ -145,7 +248,7 @@
         (array-dimensions image-down)
       (assert (equal width-up width-down))
       (assert (equal colors-up colors-down))
-      (let* ((new-height (+ height-down y-point))
+o      (let* ((new-height (+ height-down y-point))
              (new-dims (if (null colors-down)
                            (list new-height width-down)
                            (list new-height width-down colors-down)))
@@ -312,6 +415,7 @@
                      (incf black))))
         (let* ((pix-amount (* intesect-height width))
                (result (float (/ black pix-amount))))
+          ;;(format t " ~% analysis result ~A y-point ~A" result y-point)
           result)))))
 
 ;; возвращает список cons-пар, где car = результат, а cdr = координата Y, при которой этот
@@ -338,17 +442,92 @@
 ;; отличается от get-merge-results только вызовом xor-area вместо append-xor
 (defun get-area-merge-results (image-up image-down &optional (cnt 0))
   ;; создаем вектор, в который будут записаны результаты
-  ;; (let ((results (make-hash-table)))
-  (let ((results ))
-    ;;(format t "~% cnt ~A" cnt)
-    (do ((vy cnt (incf vy)))
-        ((= vy (array-dimension image-up 0)))
-      (setf results
-            (cons (cons
-                   (analysis
-                    (append-xor image-up image-down vy)
-                    vy) vy) results)))
-    results))
+  (let* ((lock (bt:make-lock))
+         (results)
+         ;; нахдим середину той области, что будем ксорить
+         (middle (if (eql cnt 0)
+                     (floor (/ (array-dimension image-up 0) 2))
+                     (+ (floor (/ (- (array-dimension image-up 0) cnt)  2)) cnt))))
+    (format t "~% middle ~A" middle)
+    (macrolet ((cycle ((i max)
+                       &body body)
+                 `(do ((i ,i (incf i)))
+                      ((= i ,max))
+                    ,@body)))
+      ;; если середина != 0 и != 1
+      (if (and (not (eql 1 middle)) (not (eql 0 middle)))
+          (progn
+            (format t "~% true")
+            ;; запускаем поток, который будет ксорить первую половину области ксора
+            (let* ((to-middle
+                    (bt:make-thread
+                     (lambda ()
+                       (with-open-file (out "to.txt" :direction :output
+                                            :if-exists :supersede)
+                         ;;(format out "~% thread 1")
+                         (cycle (cnt middle)
+                                (setf results (cons (cons
+                                                     (bt:with-lock-held (lock)
+                                                       (analysis
+                                                        (xor-area image-up image-down i)
+                                                        i)
+                                                       )
+                                                     i)
+                                                    results))
+                                ;; (format out "~%: 1 =vy: ~A = ~A"
+                                ;;         i
+                                ;;         (analysis
+                                ;;          (xor-area image-up image-down i)
+                                ;;          i))
+                                ;; (format out "~%: result ~A" results)
+                                )))))
+                   ;; запускаем поток,
+                   ;; который будет ксорить вторую половину области ксора
+                   (from-middle (bt:make-thread
+                                 (lambda ()
+                                   (with-open-file (output "to2.txt" :direction :output
+                                                           :if-exists :supersede)
+                                     (cycle (middle (array-dimension image-up 0))
+                                            (setf results
+                                                  (cons (cons
+                                                         (bt:with-lock-held (lock)
+                                                           (analysis
+                                                            (xor-area
+                                                             image-up image-down i)
+                                                            i)
+                                                           )
+                                                         i)
+                                                        results))
+                                            ;; (format output "~%: 2 =vy: ~A = ~A"
+                                            ;;         i
+                                            ;;         (analysis
+                                            ;;          (xor-area image-up image-down i)
+                                            ;;          i))
+                                            ;; (format output "~%: result ~A" results)
+                                            )
+                                     )))
+                     ))
+              (tagbody top
+                 ;; если какой-то из потоков жив
+                 (if (or (bt:thread-alive-p to-middle) (bt:thread-alive-p from-middle))
+                     (progn
+                       ;; ждем секунду и проверяем опять
+                       (sleep 1)
+                       (go top))
+                     ;; иначе возвращаем результаты
+                     (return-from get-area-merge-results results)))))
+            ;; на случай, если середина = 1,
+            ;; просто ксорим область, не разбивая это на потоки,
+            ;; (область очень маленькая)
+            (cycle (cnt (array-dimension image-up 0))
+                   (setf results (cons (cons
+                                        (analysis
+                                         (xor-area image-up image-down i)
+                                         i)
+                                        i)
+                                       results))))
+          ;;(format t " ~%  results ~A " results)
+          results)))
 
 ;; (block test-merge-results-grayscale
 ;;   (time
@@ -356,13 +535,18 @@
 ;;           (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300))))
 ;;      (get-merge-results arr1 arr2))))
 
-;; 111 sec (!!!)
-;; (block new-test
-;;   (time
-;;    (let* ((arr1 (binarization (load-png "~/Pictures/result.png") 200))
-;;           (arr2 (binarization (load-png "~/Pictures/test10.png") 200))
-;;           (lst (get-area-merge-results arr1 arr2
-;;                            (- (array-dimension arr1 0) (array-dimension arr2 0))))))))
+;;20 sec (!!!)
+(block new-ger-area-merge-results-with-threads
+  (time
+   (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
+          (lst (get-area-merge-results arr1 arr2
+                                       (- (array-dimension arr2 0)
+                                          (array-dimension arr1 0)))))
+     (format t " ~%  results ~A " (sort lst
+                                        #'(lambda (a b)
+                                            (> (car a) (car b)))))
+     )))
 
 ;; ------------------ analysis END
 
@@ -467,8 +651,8 @@
 ;; будет выполняться оооочень долго
 ;; (time
 ;;     (block screen-all-images-test
-;;       (open-browser "/usr/bin/firefox"
-;;                     *hh-teaser-url*)
+;; (open-browser "/usr/bin/firefox"
+;;               *hh-teaser-url*)
 ;;       (sleep 8)
 ;;       (screen-all-images))
 ;; )
@@ -844,7 +1028,8 @@
                          (read-line output nil 'eof)))
                 ((eql a-line 'eof))
               (format t "~A" a-line)
-              (force-output output))))
+              (force-output output)))
+          (format t "~% ~A" proc))
         (format t "~% resize: didn't run ImageMagic"))))
 
 ;; принимает массив пикселей картинки, которую должен вырезать
@@ -990,8 +1175,8 @@
                          (read-line output nil 'eof)))
                 ((eql a-line 'eof))
               (format t "~A" a-line)
-              (force-output output))))
-        (format t "~% resize: didn't run ImageMagic"))))
+              (force-output output)))
+          (format t "~% resize: didn't run ImageMagic"))))
 
 
 (defmacro with-display (host (display screen root-window) &body body)
