@@ -248,7 +248,7 @@
         (array-dimensions image-down)
       (assert (equal width-up width-down))
       (assert (equal colors-up colors-down))
-o      (let* ((new-height (+ height-down y-point))
+      (let* ((new-height (+ height-down y-point))
              (new-dims (if (null colors-down)
                            (list new-height width-down)
                            (list new-height width-down colors-down)))
@@ -389,12 +389,44 @@ o      (let* ((new-height (+ height-down y-point))
 
 ;; ------------------ analysis BEGIN
 
+;;Старый analysis
+;; (defun analysis (xored-image y-point)
+;;   (destructuring-bind (height width &optional colors)
+;;       (array-dimensions xored-image)
+;;     ;;(format t "~% y-point ~A height ~A" y-point height)
+;;     (let ((intesect-height (- height y-point)) ;; высота пересечения
+;;           (black 0))
+;;       ;;(format t "~% intesect-height ~A " intesect-height)
+;;       (macrolet ((cycle ((py px height width)
+;;                          &body body)
+;;                    `(do ((qy ,py (incf qy)))
+;;                         ((= qy ,height))
+;;                       (do ((qx ,px (incf qx)))
+;;                           ((= qx ,width))
+;;                         ,@body))))
+;;         (if colors
+;;             (cycle (y-point 0 height width)
+;;                    (when (and (eql (aref xored-image qy qx 0) 0)
+;;                               (eql (aref xored-image qy qx 1) 0)
+;;                               (eql (aref xored-image qy qx 2) 0))
+;;                      (incf black)))
+;;             ;; else
+;;             (cycle (y-point 0 height width)
+;;                    (when (eql (aref xored-image qy qx) 0)
+;;                      (incf black))))
+;;         (let* ((pix-amount (* intesect-height width))
+;;                (result (float (/ black pix-amount))))
+;;           (format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
+;;           result)))))
+
 (defun analysis (xored-image y-point)
   (destructuring-bind (height width &optional colors)
       (array-dimensions xored-image)
     ;;(format t "~% y-point ~A height ~A" y-point height)
-    (let ((intesect-height (- height y-point)) ;; высота пересечения
-          (black 0))
+    (let* ((intesect-height (- height y-point)) ;; высота пересечения
+           (white 0)
+           (black 0)
+           (pix-amount (* intesect-height width)))
       ;;(format t "~% intesect-height ~A " intesect-height)
       (macrolet ((cycle ((py px height width)
                          &body body)
@@ -403,41 +435,57 @@ o      (let* ((new-height (+ height-down y-point))
                       (do ((qx ,px (incf qx)))
                           ((= qx ,width))
                         ,@body))))
+        ;; если картинки full-color
         (if colors
-            (cycle (y-point 0 height width)
-                   (when (and (eql (aref xored-image qy qx 0) 0)
-                              (eql (aref xored-image qy qx 1) 0)
-                              (eql (aref xored-image qy qx 2) 0))
-                     (incf black)))
-            ;; else
-            (cycle (y-point 0 height width)
-                   (when (eql (aref xored-image qy qx) 0)
-                     (incf black))))
-        (let* ((pix-amount (* intesect-height width))
-               (result (float (/ black pix-amount))))
-          ;;(format t " ~% analysis result ~A y-point ~A" result y-point)
+            (do ((qy y-point (incf qy)))
+                ((= qy height))
+              ;; если кол-во нечерных пикселей больше 25%
+              (if (> (float (/ white pix-amount)) 0.25)
+                  (progn
+                    ;; не анализируя дальше, возвращаем nil
+                    (return-from analysis))
+                  ;; в противном случае анализиуем следующий ряд пикселей
+                  (do ((qx 0 (incf qx)))
+                      ((= qx width))
+                    (when (not (and (eql (aref xored-image qy qx 0) 0)
+                                    (eql (aref xored-image qy qx 1) 0)
+                                    (eql (aref xored-image qy qx 2) 0)))
+                      (incf white)))))
+            ;; то же самое для бинарных изображений
+            (do ((qy y-point (incf qy)))
+                ((= qy height))
+              (if (> (float (/ white pix-amount)) 0.25)
+                  (progn
+                    ;;(format t " ~% white ~A" (float (/ white pix-amount)))
+                    (return-from analysis))
+                  (do ((qx 0 (incf qx)))
+                      ((= qx width))
+                    (when (not (eql (aref xored-image qy qx) 0))
+                      (incf white))))))
+        ;; эта часть выполнится только если все циклы выполнены успешно
+        ;; считаем кол-во черых пикселей
+        (setf black ( - pix-amount white))
+        (let ((result (float (/ black pix-amount))))
+          ;;(format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
+          ;; возвращаем кол-во черных пикселей в процентном выражении
           result)))))
 
 ;; возвращает список cons-пар, где car = результат, а cdr = координата Y, при которой этот
 ;; результат был получен
 (defun get-merge-results (image-up image-down &optional (cnt 0))
-  ;; создаем вектор, в который будут записаны результаты
   (let ((results))
- ;;   (format t "~% cnt ~A" cnt)
     (do ((vy cnt (incf vy)))
         ((= vy (array-dimension image-up 0)))
-      ;; (format t "~%: =vy: ~A = ~A"
-      ;;         vy
-      ;;         (analysis
-      ;;          (append-xor image-up image-down vy)
-      ;; vy))
-      ;; записываем результат
-      (setf results
-            (cons (cons
-                   (analysis
-                    (append-xor image-up image-down vy)
-                    vy) vy) results)))
-     results))
+      (let ((amount (analysis
+                     (append-xor image-up image-down vy)
+                     vy)))
+        (if amount
+            (progn
+              (format t "~% amount ~A" amount)
+              (setf results
+                    (cons (cons
+                           amount vy) results))))))
+    results))
 
 ;; отличается от get-merge-results только вызовом xor-area вместо append-xor
 (defun get-area-merge-results (image-up image-down &optional (cnt 0))
@@ -466,14 +514,14 @@ o      (let* ((new-height (+ height-down y-point))
                                             :if-exists :supersede)
                          ;;(format out "~% thread 1")
                          (cycle (cnt middle)
-                                (setf results (cons (cons
-                                                     (bt:with-lock-held (lock)
-                                                       (analysis
-                                                        (xor-area image-up image-down i)
-                                                        i)
-                                                       )
-                                                     i)
-                                                    results))
+                                (let ((amount (analysis
+                                               (append-xor image-up image-down i)
+                                               i)))
+                                  (if amount
+                                      (bt:with-lock-held (lock)
+                                        (setf results (cons
+                                                       (cons amount i)
+                                                       results)))))
                                 ;; (format out "~%: 1 =vy: ~A = ~A"
                                 ;;         i
                                 ;;         (analysis
@@ -488,16 +536,15 @@ o      (let* ((new-height (+ height-down y-point))
                                    (with-open-file (output "to2.txt" :direction :output
                                                            :if-exists :supersede)
                                      (cycle (middle (array-dimension image-up 0))
-                                            (setf results
-                                                  (cons (cons
-                                                         (bt:with-lock-held (lock)
-                                                           (analysis
-                                                            (xor-area
-                                                             image-up image-down i)
-                                                            i)
-                                                           )
-                                                         i)
-                                                        results))
+                                            (let ((amount (analysis
+                                                           (append-xor image-up
+                                                                       image-down i)
+                                                           i)))
+                                              (if amount
+                                                  (bt:with-lock-held (lock)
+                                                    (setf results (cons
+                                                                   (cons amount i)
+                                                                   results)))))
                                             ;; (format output "~%: 2 =vy: ~A = ~A"
                                             ;;         i
                                             ;;         (analysis
@@ -516,37 +563,39 @@ o      (let* ((new-height (+ height-down y-point))
                        (go top))
                      ;; иначе возвращаем результаты
                      (return-from get-area-merge-results results)))))
-            ;; на случай, если середина = 1,
-            ;; просто ксорим область, не разбивая это на потоки,
-            ;; (область очень маленькая)
-            (cycle (cnt (array-dimension image-up 0))
-                   (setf results (cons (cons
-                                        (analysis
-                                         (xor-area image-up image-down i)
-                                         i)
-                                        i)
-                                       results))))
-          ;;(format t " ~%  results ~A " results)
-          results)))
+          ;; на случай, если середина = 1,
+          ;; просто ксорим область, не разбивая это на потоки,
+          ;; (область очень маленькая)
+          (cycle (cnt (array-dimension image-up 0))
+                 (setf results (cons (cons
+                                      (analysis
+                                       (xor-area image-up image-down i)
+                                       i)
+                                      i)
+                                     results))))
+      ;;(format t " ~%  results ~A " results)
+      results)))
 
 ;; (block test-merge-results-grayscale
 ;;   (time
-;;    (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
-;;           (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300))))
-;;      (get-merge-results arr1 arr2))))
+;;    (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+;;           (arr2 (binarization (load-png "~/Pictures/test0.png") 200)))
+;;      (format t " ~%  results ~A "
+;;      (get-merge-results arr1 arr2 (- (array-dimension arr2 0)
+;;                                      (array-dimension arr1 0)))))))
 
 ;;20 sec (!!!)
-(block new-ger-area-merge-results-with-threads
-  (time
-   (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
-          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
-          (lst (get-area-merge-results arr1 arr2
-                                       (- (array-dimension arr2 0)
-                                          (array-dimension arr1 0)))))
-     (format t " ~%  results ~A " (sort lst
-                                        #'(lambda (a b)
-                                            (> (car a) (car b)))))
-     )))
+;; (block new-ger-area-merge-results-with-threads
+;;   (time
+;;    (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+;;           (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
+;;           (lst (get-area-merge-results arr1 arr2
+;;                                        (- (array-dimension arr2 0)
+;;                                           (array-dimension arr1 0)))))
+;;      (format t " ~%  results ~A " (sort lst
+;;                                         #'(lambda (a b)
+;;                                             (> (car a) (car b)))))
+;;      )))
 
 ;; ------------------ analysis END
 
