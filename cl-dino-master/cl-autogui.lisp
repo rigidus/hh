@@ -426,7 +426,8 @@
     (let* ((intesect-height (- height y-point)) ;; высота пересечения
            (white 0)
            (black 0)
-           (pix-amount (* intesect-height width)))
+           (pix-amount (* intesect-height width))
+           (border (/ pix-amount 4)))
       ;;(format t "~% intesect-height ~A " intesect-height)
       (macrolet ((cycle ((py px height width)
                          &body body)
@@ -440,7 +441,7 @@
             (do ((qy y-point (incf qy)))
                 ((= qy height))
               ;; если кол-во нечерных пикселей больше 25%
-              (if (> (float (/ white pix-amount)) 0.25)
+              (if (> white border)
                   (progn
                     ;; не анализируя дальше, возвращаем nil
                     (return-from analysis))
@@ -454,7 +455,7 @@
             ;; то же самое для бинарных изображений
             (do ((qy y-point (incf qy)))
                 ((= qy height))
-              (if (> (float (/ white pix-amount)) 0.25)
+              (if (> white border)
                   (progn
                     ;;(format t " ~% white ~A" (float (/ white pix-amount)))
                     (return-from analysis))
@@ -584,18 +585,18 @@
 ;;      (get-merge-results arr1 arr2 (- (array-dimension arr2 0)
 ;;                                      (array-dimension arr1 0)))))))
 
-;;20 sec (!!!)
-;; (block new-ger-area-merge-results-with-threads
-;;   (time
-;;    (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
-;;           (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
-;;           (lst (get-area-merge-results arr1 arr2
-;;                                        (- (array-dimension arr2 0)
-;;                                           (array-dimension arr1 0)))))
-;;      (format t " ~%  results ~A " (sort lst
-;;                                         #'(lambda (a b)
-;;                                             (> (car a) (car b)))))
-;;      )))
+20 sec (!!!)
+(block new-ger-area-merge-results-with-threads
+  (time
+   (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
+          (lst (get-area-merge-results arr1 arr2
+                                       (- (array-dimension arr2 0)
+                                          (array-dimension arr1 0)))))
+     (format t " ~%  results ~A " (sort lst
+                                        #'(lambda (a b)
+                                            (> (car a) (car b)))))
+     )))
 
 ;; ------------------ analysis END
 
