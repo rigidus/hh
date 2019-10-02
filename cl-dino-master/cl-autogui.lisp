@@ -132,109 +132,6 @@
 
 ;; ------------------ append-xor BEGIN
 
-
-;; (block thread-test
-;;   (defparameter *thread-test* 0)
-
-;;   (defun thread-incf (i)
-;;     (format t "~% incf ~A " i)
-;;     (incf *thread-test*))
-
-;;   (defun thread-decf (i)
-;;     (format t "~% decf ~A " i)
-;;     (decf *thread-test*))
-
-;;   ;; без мьютекса
-;;   (defun test ()
-;;     (do ((i 0 (incf i)))
-;;         (( = i 10) *thread-test*)
-;;       (format t "~% *thread-test* ~A " *thread-test*)
-;;       (bt:make-thread
-;;        (lambda ()
-;;          (do ((i 0 (incf i)))
-;;              (( = i 10000) *thread-test*)
-;;            (thread-incf i))
-;;          (do ((i 0 (incf i)))
-;;              (( = i 10000) *thread-test*)
-;;            (thread-decf i))))))
-
-;;   ;; с мьюетксом
-;;   (defun test-mutex ()
-;;     (do ((i 0 (incf i)))
-;;         (( = i 10) *thread-test*)
-;;       (format t "~% *thread-test* ~A " *thread-test*)
-;;       (bt:make-thread
-;;        (lambda ()
-;;          (do ((i 0 (incf i)))
-;;              (( = i 10000) *thread-test*)
-;;            (bt:with-lock-held (*lock*)
-;;              (thread-incf i)))
-;;          (do ((i 0 (incf i)))
-;;              (( = i 10000) *thread-test*)
-;;            (bt:with-lock-held (*lock*)
-;;              (thread-decf i)))))))
-
-;;    )
-;;   ;; (test)
-;;   ;;  (test-mutex)
-
-;; (block paralelism
-;;   (defun ttt (a)
-;;     (* a 2))
-;;   ;; как собрать данные с двух потоков?
-;;   ;; заводим переменную, каждый из двух потоков по очереди пушит туда значение
-;;   (defparameter result '())
-;;   (defvar *lock* (bt:make-lock))
-;;   (defun get-results (lst)
-;;     (let ((res)
-;;           (lock (bt:make-lock))
-;;          )
-;;     (bt:make-thread
-;;      (lambda ()
-;;          (with-open-file (out "t.txt" :direction :output
-;;                               :if-exists :supersede)
-;;        (do ((i 0 (incf i)))
-;;            (( = i (floor (/ (length lst) 2))))
-;;          (setf result (cons (bt:with-lock-held (lock)
-;;                                 (ttt (nth i lst)))
-;;                             result))
-;;          (format out " ~% res ~A i ~A" result i)))))
-
-;;        (bt:make-thread
-;;         (lambda ()
-;;           (with-open-file (output "t2.txt" :direction :output
-;;                               :if-exists :supersede)
-;;           (do ((i (floor (/ (length lst) 2)) (incf i)))
-;;               (( = i  (length lst)))
-;;             (setf result (cons (bt:with-lock-held (lock)
-;;                                    (ttt (nth i lst)))
-;;                                result))
-;;             (format output " ~% res ~A i ~A" result i))))
-;;        ;;(format t "~% res ~A" result)
-;;         ) result))
-
-;;   (defun test ()
-;;     (let* ((test 0)
-;;            (thread-name)
-;;            (thread (bt:make-thread
-;;                     (lambda ()
-;;                       (sleep 5)
-;;                       (incf test)) :name thread-name)))
-;;       (tagbody
-;;        top
-;;          (if (bt:thread-alive-p thread)
-;;              (progn
-;;                (sleep 1)
-;;                (go top))
-;;              (return-from test test)))))
-
-;; (test)
-
-;; (format t "~% ~A" result)
-;; (get-results '(1 2 3 4 5 6 7 8 9 10))
-
-;;(floor (/ 2 (length '(1 2 3 4 5 6 7 8 9 10))))
-
 (defun append-xor (image-up image-down y-point)
   "Принимает 2 массива изображений и высоту,
    где второе изображение будет наложено на первое
@@ -263,7 +160,7 @@
                           ,@body)
                         ,@newline)))
           ;; копируем первую картинку в новый массив
-          ;; от ее начала до до ее конца (NB: тут отличие от append-image)
+          ;; от ее начала до ее конца (NB: тут отличие от append-image)
           (if (null colors-up)
               (cycle (0 0 height-up width-up)
                      (setf (aref image-new qy qx)
@@ -294,27 +191,33 @@
                        ;; копируем альфа-канал
                            (setf (aref image-new new-y qx 3)
                                  (aref image-down qy qx 3))
-                       )))
-
-          ;; ЭТОТ КУСОК МОЖНО УБРАТЬ
-                ;; поправим излишне поксоренный альфа-канал (если он есть)
-                ;; но только там где изображения перекрываются (!)
-                ;; (when (equal 4 colors-down)
-                ;;   (let ((new-y y-point))
-                ;;     (cycle (0 0 (- height-up y-point) width-up (incf new-y))
-                ;;            (do ((rz 0 (+ colors-down rz)))
-                ;;                ((= rz colors-down))
-                ;;              (setf (aref image-new new-y qx (+ 3 rz))
-                ;;                    #xFF)
-                ;;              ;; ;; проверка правильности заксоривания -
-                ;;              ;; ;; можно убрать после отладки
-                ;;              ;; (setf (aref image-new new-y qx (+ 2 rz)) #xFF)
-                ;;              ))))
-                )
+                       ))))
         image-new))))
 
-;; ксорит и возвращает только заданную область, не копируя остальные пиксели массивов
+;; (time
+;;  (block test-append-xor-fullcolor
+;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 500 :height 300))
+;;           (arr2 (x-snapshot :x 0 :y 100 :width 500 :height 300))
+;;           (result (append-xor arr1 arr2 200)))
+;;      (destructuring-bind (height width  &rest rest)
+;;          (array-dimensions result)
+;;        (save-png width height "~/Pictures/result.png" result)))))
+
+;; (block test-append-xor-grayscale
+;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+;;          (arr2 (binarization (x-snapshot :x 0 :y 100 :width 755 :height 300)))
+;;          (array (append-xor arr1 arr2 200)))
+;;     (destructuring-bind (height width  &rest rest)
+;;         (array-dimensions array)
+;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
+
+
 (defun xor-area (image-up image-down y-point)
+  "Получает на вход 2 массива изображений и точку, от которой начнется наложение.
+   Накладывает одно изображение на другое,
+   но не копирует пиксели, которые не надо ксорить. Т.е. работает только над заданной
+   областью наложения.
+   Изображения должны иметь одинаковую ширину и кол-во байт на пиксель"
   (destructuring-bind (height-up width-up &optional colors-up)
       (array-dimensions image-up)
     (destructuring-bind (height-down width-down &optional colors-down)
@@ -338,11 +241,12 @@
           ;; для бинарных изображений
           (if (null colors-down)
               (let ((new-y y-point))
+                ;; (- height-up y-point) = высота области наложения
                 (cycle (0 0 (- height-up y-point) width-down (incf new-y))
                        (setf (aref image-new qy qx)
                              (logxor (aref image-up new-y qx)
                                      (aref image-down qy qx)))))
-              ;; else
+              ;; для full-color изображений
               (let ((new-y y-point))
                 (cycle (0 0 (- height-up y-point) width-down (incf new-y))
                        ;; ксорим 3 цвета
@@ -357,27 +261,10 @@
                        ))))
         image-new))))
 
-;; (time
-;;  (block test-append-xor-fullcolor
-;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 500 :height 300))
-;;           (arr2 (x-snapshot :x 0 :y 100 :width 500 :height 300))
-;;           (result (append-xor arr1 arr2 200)))
-;;      (destructuring-bind (height width  &rest rest)
-;;          (array-dimensions result)
-;;        (save-png width height "~/Pictures/result.png" result)))))
-
-;; (block test-append-xor-grayscale
-;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
-;;          (arr2 (binarization (x-snapshot :x 0 :y 100 :width 755 :height 300)))
-;;          (array (append-xor arr1 arr2 200)))
-;;     (destructuring-bind (height width  &rest rest)
-;;         (array-dimensions array)
-;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
-
 ;; (block xor-area-test
 ;;   (time
-;;   (let* ((arr1 (binarization (load-png "~/Pictures/result.png") 200))
-;;          (arr2 (binarization (load-png "~/Pictures/test10.png") 200))
+;;   (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+;;          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
 ;;          (array (xor-area arr1 arr2
 ;;                           (- (array-dimension arr1 0) (array-dimension arr2 0)))))
 ;;              (destructuring-bind (height width  &rest rest)
@@ -389,91 +276,61 @@
 
 ;; ------------------ analysis BEGIN
 
-;;Старый analysis
-;; (defun analysis (xored-image y-point)
-;;   (destructuring-bind (height width &optional colors)
-;;       (array-dimensions xored-image)
-;;     ;;(format t "~% y-point ~A height ~A" y-point height)
-;;     (let ((intesect-height (- height y-point)) ;; высота пересечения
-;;           (black 0))
-;;       ;;(format t "~% intesect-height ~A " intesect-height)
-;;       (macrolet ((cycle ((py px height width)
-;;                          &body body)
-;;                    `(do ((qy ,py (incf qy)))
-;;                         ((= qy ,height))
-;;                       (do ((qx ,px (incf qx)))
-;;                           ((= qx ,width))
-;;                         ,@body))))
-;;         (if colors
-;;             (cycle (y-point 0 height width)
-;;                    (when (and (eql (aref xored-image qy qx 0) 0)
-;;                               (eql (aref xored-image qy qx 1) 0)
-;;                               (eql (aref xored-image qy qx 2) 0))
-;;                      (incf black)))
-;;             ;; else
-;;             (cycle (y-point 0 height width)
-;;                    (when (eql (aref xored-image qy qx) 0)
-;;                      (incf black))))
-;;         (let* ((pix-amount (* intesect-height width))
-;;                (result (float (/ black pix-amount))))
-;;           (format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
-;;           result)))))
-
 (defun analysis (xored-image y-point)
+  "Принимает отксоренное изображение и y-координату  наложения,
+   т.е. точку, от которой будет производиться анализ.
+   Анализирует кол-во почерневших точек на изображении, возвращает cons-пару типа
+   (% черных точек . y-point)"
   (destructuring-bind (height width &optional colors)
       (array-dimensions xored-image)
     ;;(format t "~% y-point ~A height ~A" y-point height)
     (let* ((intesect-height (- height y-point)) ;; высота пересечения
            (white 0)
            (black 0)
+           ;; общее кол-во пикселей в области наложения
            (pix-amount (* intesect-height width))
+           ;; допустимое кол-во белых пикселей на изображении
            (border (/ pix-amount 4)))
       ;;(format t "~% intesect-height ~A " intesect-height)
-      (macrolet ((cycle ((py px height width)
-                         &body body)
-                   `(do ((qy ,py (incf qy)))
-                        ((= qy ,height))
-                      (do ((qx ,px (incf qx)))
-                          ((= qx ,width))
-                        ,@body))))
-        ;; если картинки full-color
-        (if colors
-            (do ((qy y-point (incf qy)))
-                ((= qy height))
-              ;; если кол-во нечерных пикселей больше 25%
-              (if (> white border)
-                  (progn
-                    ;; не анализируя дальше, возвращаем nil
-                    (return-from analysis))
-                  ;; в противном случае анализиуем следующий ряд пикселей
-                  (do ((qx 0 (incf qx)))
-                      ((= qx width))
-                    (when (not (and (eql (aref xored-image qy qx 0) 0)
-                                    (eql (aref xored-image qy qx 1) 0)
-                                    (eql (aref xored-image qy qx 2) 0)))
-                      (incf white)))))
-            ;; то же самое для бинарных изображений
-            (do ((qy y-point (incf qy)))
-                ((= qy height))
-              (if (> white border)
-                  (progn
-                    ;;(format t " ~% white ~A" (float (/ white pix-amount)))
-                    (return-from analysis))
-                  (do ((qx 0 (incf qx)))
-                      ((= qx width))
-                    (when (not (eql (aref xored-image qy qx) 0))
-                      (incf white))))))
-        ;; эта часть выполнится только если все циклы выполнены успешно
-        ;; считаем кол-во черых пикселей
-        (setf black ( - pix-amount white))
-        (let ((result (float (/ black pix-amount))))
-          ;;(format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
-          ;; возвращаем кол-во черных пикселей в процентном выражении
-          result)))))
+      ;; если картинки full-color
+      (if colors
+          (do ((qy y-point (incf qy)))
+              ((= qy height))
+            ;; если кол-во нечерных пикселей больше 25%
+            (if (> white border)
+                (progn
+                  ;; не анализируя дальше, возвращаем nil
+                  (return-from analysis))
+                ;; в противном случае анализиуем следующий ряд пикселей
+                (do ((qx 0 (incf qx)))
+                    ((= qx width))
+                  (when (not (and (eql (aref xored-image qy qx 0) 0)
+                                  (eql (aref xored-image qy qx 1) 0)
+                                  (eql (aref xored-image qy qx 2) 0)))
+                    (incf white)))))
+          ;; то же самое для бинарных изображений
+          (do ((qy y-point (incf qy)))
+              ((= qy height))
+            (if (> white border)
+                (progn
+                  ;;(format t " ~% white ~A" (float (/ white pix-amount)))
+                  (return-from analysis))
+                (do ((qx 0 (incf qx)))
+                    ((= qx width))
+                  (when (not (eql (aref xored-image qy qx) 0))
+                    (incf white))))))
+      ;; эта часть выполнится только если все циклы выполнены успешно
+      ;; считаем кол-во черных пикселей
+      (setf black ( - pix-amount white))
+      (let ((result (float (/ black pix-amount))))
+        ;;(format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
+        ;; возвращаем кол-во черных пикселей в процентном выражении
+        result))))
 
-;; возвращает список cons-пар, где car = результат, а cdr = координата Y, при которой этот
-;; результат был получен
 (defun get-merge-results (image-up image-down &optional (cnt 0))
+  "Возвращает список cons-пар, где car = результат, а cdr = координата Y, при которой этот
+   результат был получен (результат . y-point).
+   Для получения резульатата вызывает append-xor "
   (let ((results))
     (do ((vy cnt (incf vy)))
         ((= vy (array-dimension image-up 0)))
@@ -488,14 +345,31 @@
                            amount vy) results))))))
     results))
 
-;; отличается от get-merge-results только вызовом xor-area вместо append-xor
+
+;; (block test-merge-results-grayscale
+;;   (time
+;;    (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+;;           (arr2 (binarization (load-png "~/Pictures/test0.png") 200)))
+;;      (format t " ~%  results ~A "
+;;      (get-merge-results arr1 arr2 (- (array-dimension arr2 0)
+;;                                      (array-dimension arr1 0)))))))
+
 (defun get-area-merge-results (image-up image-down &optional (cnt 0))
-  ;; создаем вектор, в который будут записаны результаты
+  "Возвращает список cons-пар, где car = результат, а cdr = координата Y, при которой этот
+   результат был получен (результат . y-point) Принимает 2 массива изображений
+   и точку наложения.
+   Для получения резульатата вызывает xor-area"
+  ;; создание мьютекса
   (let* ((lock (bt:make-lock))
          (results)
-         ;; нахдим середину той области, что будем ксорить
+         ;; находим середину той области, что будем ксорить
          (middle (if (eql cnt 0)
+                     ;; если картинки накладываются с координаты 0;0
                      (floor (/ (array-dimension image-up 0) 2))
+                     ;; если координата Y != 0, считаем высоту области наложения
+                     ;; делим на 2, округляем и прибавляем значение координаты Y
+                     ;; (Например, высота image-up = 100, y -point = 50.
+                     ;;  (100 - 50) = 50. 50 / 2 = 25. 50 + 25 = 75. 75 = середина
                      (+ (floor (/ (- (array-dimension image-up 0) cnt)  2)) cnt))))
     (format t "~% middle ~A" middle)
     (macrolet ((cycle ((i max)
@@ -507,7 +381,7 @@
       (if (and (not (eql 1 middle)) (not (eql 0 middle)))
           (progn
             (format t "~% true")
-            ;; запускаем поток, который будет ксорить первую половину области ксора
+            ;; запускаем поток, который будет ксорить первую половину области наложения
             (let* ((to-middle
                     (bt:make-thread
                      (lambda ()
@@ -518,7 +392,9 @@
                                 (let ((amount (analysis
                                                (append-xor image-up image-down i)
                                                i)))
+                                  ;; если какой-то результат получен,
                                   (if amount
+                                      ;; заносим его в общий список результатов
                                       (bt:with-lock-held (lock)
                                         (setf results (cons
                                                        (cons amount i)
@@ -577,26 +453,18 @@
       ;;(format t " ~%  results ~A " results)
       results)))
 
-;; (block test-merge-results-grayscale
+;; 15-20 sec (!!!)
+;; (block new-ger-area-merge-results-with-threads
 ;;   (time
 ;;    (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
-;;           (arr2 (binarization (load-png "~/Pictures/test0.png") 200)))
-;;      (format t " ~%  results ~A "
-;;      (get-merge-results arr1 arr2 (- (array-dimension arr2 0)
-;;                                      (array-dimension arr1 0)))))))
-
-20 sec (!!!)
-(block new-ger-area-merge-results-with-threads
-  (time
-   (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
-          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
-          (lst (get-area-merge-results arr1 arr2
-                                       (- (array-dimension arr2 0)
-                                          (array-dimension arr1 0)))))
-     (format t " ~%  results ~A " (sort lst
-                                        #'(lambda (a b)
-                                            (> (car a) (car b)))))
-     )))
+;;           (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
+;;           (lst (get-area-merge-results arr1 arr2
+;;                                        (- (array-dimension arr2 0)
+;;                                           (array-dimension arr1 0)))))
+;;      (format t " ~%  results ~A " (sort lst
+;;                                         #'(lambda (a b)
+;;                                             (> (car a) (car b)))))
+;;      )))
 
 ;; ------------------ analysis END
 
@@ -1225,8 +1093,8 @@
                          (read-line output nil 'eof)))
                 ((eql a-line 'eof))
               (format t "~A" a-line)
-              (force-output output)))
-          (format t "~% resize: didn't run ImageMagic"))))
+              (force-output output)))))
+          (format t "~% resize: didn't run ImageMagic")))
 
 
 (defmacro with-display (host (display screen root-window) &body body)
