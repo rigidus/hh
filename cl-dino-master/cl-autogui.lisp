@@ -454,17 +454,17 @@
       results)))
 
 ;; 15-20 sec (!!!)
-;; (block new-ger-area-merge-results-with-threads
-;;   (time
-;;    (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
-;;           (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
-;;           (lst (get-area-merge-results arr1 arr2
-;;                                        (- (array-dimension arr2 0)
-;;                                           (array-dimension arr1 0)))))
-;;      (format t " ~%  results ~A " (sort lst
-;;                                         #'(lambda (a b)
-;;                                             (> (car a) (car b)))))
-;;      )))
+(block new-ger-area-merge-results-with-threads
+  (time
+   (let* ((arr1 (binarization (load-png "~/Pictures/test0.png") 200))
+          (arr2 (binarization (load-png "~/Pictures/test1.png") 200))
+          (lst (get-area-merge-results arr1 arr2
+                                       (- (array-dimension arr2 0)
+                                          (array-dimension arr1 0)))))
+     (format t " ~%  results ~A " (sort lst
+                                        #'(lambda (a b)
+                                            (> (car a) (car b)))))
+     )))
 
 ;; ------------------ analysis END
 
@@ -1137,7 +1137,7 @@
 (defun x-move (x y)
   (if (and (integerp x) (integerp y))
       (with-default-display-force (d)
-        (xtest:fake-motion-event d x y))
+        (xlib/xtest:fake-motion-event d x y))
       (error "Integer only for position, (x: ~S, y: ~S)" x y)))
 
 (defun mklist (obj)
@@ -1158,7 +1158,7 @@
 (defun perform-mouse-action (press? button &key x y)
   (and x y (x-move x y))
   (with-default-display-force (d)
-    (xtest:fake-button-event d button press?)))
+    (xlib/xtest:fake-button-event d button press?)))
 
 (macrolet ((def (name actions)
              `(defun-with-actions ,name
@@ -1190,7 +1190,7 @@
 
 (defun perform-key-action (press? keycode) ; use xev to get keycode
   (with-default-display-force (d)
-    (xtest:fake-key-event d keycode press?)))
+    (xlib/xtest:fake-key-event d keycode press?)))
 
 (macrolet ((def (name actions)
              `(defun-with-actions ,name (keycode)
