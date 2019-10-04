@@ -184,7 +184,7 @@ URL.
 размеры скрина и путь, по кторому следует картинку сохранить.
 
 #+NAME: save-png
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
 (defun save-png (width height pathname-str image
                  &optional (color-type :truecolor-alpha))
@@ -202,7 +202,7 @@ URL.
     (setf (zpng::%image-data png) (copy-seq vector))
     (zpng:write-png png pathname-str)))
 
-<<load-png>>
+<<load_png>>
 
 <<binarization>>
 
@@ -210,8 +210,10 @@ URL.
 #+END_SRC
 
 Сохранили? Теперь бы еще неплохо бы загрузить изображение.
-Load-png принимает путь к файлу, а возвращает его массив типа zpng:data-array.
-#+NAME: load-png
+Load-png принимает путь к файлу, а возвращает его массив типа
+zpng:data-array.
+
+#+NAME: load_png
 #+BEGIN_SRC lisp
 
 (defun load-png (pathname-str)
