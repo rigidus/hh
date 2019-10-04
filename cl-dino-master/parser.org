@@ -31,6 +31,7 @@
 #+BEGIN_SRC lisp
   (defparameter *langs* "rus+eng")
   (defparameter *default-width* 1295)
+  (defparameter *default-height* 668)
   (defparameter *teaser-width* 690)
   (defparameter *snap-width* 755)
   (defparameter *snap-height* 668)
@@ -128,7 +129,7 @@ URL.
 <<raw_image_png>>
 
 (defun x-snapshot (&key (x *default-x*) (y *default-y*)
-                       (width  *default-width*) (height *default-heght*)
+                       (width  *default-width*) (height *default-height*)
                        path)
     ;; "Return RGB data array (The dimensions correspond to the height, width,
     ;; and pixel components, see comments in x-snapsearch for more details),
@@ -278,7 +279,7 @@ zpng:data-array.
 Возвращает бинаризованный массив.
 
 #+NAME: binarization
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
 <<condition>>
 
@@ -322,7 +323,7 @@ zpng:data-array.
 в котором неизвестно сколько байт на точку.
 
 #+NAME: condition
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
 ;; Ошибка, возникающая когда мы пытаемся прочитать png
 ;; в котором неизвестно сколько байт на точку
@@ -345,19 +346,20 @@ zpng:data-array.
   ;;               :path "~/Pictures/test.png")
   ;;   (let* ((image (load-png "~/Pictures/test.png"))
   ;;          (image (binarization image 200)))
-  ;;     (destructuring-bind (dw dh)
+  ;;     (destructuring-bind (dh dw)
   ;;         (array-dimensions image)
   ;;       (save-png dw dh "~/Pictures/test-bin.png"
-  ;;                 :grayscale))))
+  ;;                image  :grayscale))))
 
 
   ;; (block save-load-full-color-test
-  ;;   (x-snapshot :x 440 :width  *snap-width*
+  ;;   (x-snapshot :x 440 :width *snap-width*
   ;;               :path "~/Pictures/test.png")
+  ;;   (sleep .1)
   ;;   (let* ((image (load-png "~/Pictures/test.png")))
-  ;;   (destructuring-bind (dw dh)
+  ;;   (destructuring-bind (dh dw colors)
   ;;       (array-dimensions image)
-  ;;     (save-png dw dh "~/Pictures/test-full-color.png"))))
+  ;;     (save-png dw dh "~/Pictures/test-full-color.png" image))))
 
 #+END_SRC
 
@@ -369,7 +371,7 @@ zpng:data-array.
 
 В этом нам помогут следующие вспомогаетльные функции.
 #+NAME: fake-events
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
 (defun x-size ()
   (with-default-screen (s)
@@ -449,7 +451,7 @@ keysym. perform-mouse-action принимает еще и координаты, 
 "мышкой".
 
 #+NAME: mouse-and-key-actions
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
   (defun perform-mouse-action (press? button &key x y)
     (and x y (x-move x y))
     (with-default-display-force (d)
@@ -465,9 +467,9 @@ keysym. perform-mouse-action принимает еще и координаты, 
   ;;   (perform-key-action nil 116))
 
   ;; (block perform-mouse-action-test
-  ;;   (perform-key-action t *mouse-left* :x 100 :y 100)
+  ;;   (perform-mouse-action t *mouse-left* :x 100 :y 100)
   ;;   (sleep .1)
-  ;;   (perform-key-action nil *mouse-left* :x 100 :y 100))
+  ;;   (perform-mouse-action nil *mouse-left* :x 100 :y 100))
 
 #+END_SRC
 
@@ -502,28 +504,29 @@ keysym. perform-mouse-action принимает еще и координаты, 
 #+NAME: make-bit-image
 #+BEGIN_SRC lisp
 
-(defun make-bit-image (image-data)
-  (destructuring-bind (height width &optional colors)
-      (array-dimensions image-data)
-    ;; функция может работать только с бинарными изобажениями
-    (assert (null colors))
-    (let* ((new-width (+ (logior width 7) 1))
-           (bit-array (make-array (list height new-width)
-                                  :element-type 'bit)))
-      (do ((qy 0 (incf qy)))
-          ((= qy height))
-        (do ((qx 0 (incf qx)))
-            ((= qx width))
-          ;; если цвет пикселя не белый, считаем,
-          ;; что это не фон и заносим в битовый массив 1
-          (unless (equal (aref image-data qy qx) 255)
-            (setf (bit bit-array qy qx) 1))))
-      bit-array)))
+  (defun make-bit-image (image-data)
+    (destructuring-bind (height width &optional colors)
+        (array-dimensions image-data)
+      ;; функция может работать только с бинарными изобажениями
+      (assert (null colors))
+      (let* ((new-width (+ (logior width 7) 1))
+             (bit-array (make-array (list height new-width)
+                                    :element-type 'bit)))
+        (do ((qy 0 (incf qy)))
+            ((= qy height))
+          (do ((qx 0 (incf qx)))
+              ((= qx width))
+            ;; если цвет пикселя не белый, считаем,
+            ;; что это не фон и заносим в битовый массив 1
+            (unless (equal (aref image-data qy qx) 255)
+              (setf (bit bit-array qy qx) 1))))
+        bit-array)))
 
-;; (block make-bit-image
-;;     (time
-;;      (let* ((bit-arr1
-;;              (make-bit-image (load-png "~/Pictures/test-bin.png")))))))
+  ;; (block make-bit-image
+  ;;     (time
+  ;;      (let* ((bit-arr1
+  ;;              (make-bit-image (load-png "~/Pictures/test-bin.png"))))
+  ;;        (format t "~% ~A" bit-arr1))))
 
 #+END_SRC
 
@@ -534,7 +537,7 @@ Append-xor принимает 2 массива изображений и выс�
 и иметь одинаковое количество байт на пиксель.  Возвращает склеенный массив.
 
 #+NAME: append-xor
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
 (defun append-xor (image-up image-down y-point)
   (destructuring-bind (height-up width-up &optional colors-up)
@@ -609,7 +612,7 @@ Append-xor принимает 2 массива изображений и выс�
 ;;         (array-dimensions array)
 ;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
 
-<<xor-area>>
+<<xor_area>>
 
 #+END_SRC
 
@@ -619,8 +622,8 @@ xor-area работает почти так же, как append-xor.
 Накладывает одно изображение на другое, но копирует только сксоренные пиксели,
 т.е. исключительно область наложения одной картинки на другую.
 
-#+NAME: xor-area
-#+BEGIN_SRC lisp
+#+NAME: xor_area
+#+BEGIN_SRC lisp :noweb yes
 (defun xor-area (image-up image-down y-point)
   (destructuring-bind (height-up width-up &optional colors-up)
       (array-dimensions image-up)
@@ -675,6 +678,7 @@ xor-area работает почти так же, как append-xor.
 ;;                (save-png width height "~/Pictures/area.png" array :grayscale)))))
 
 <<append-image>>
+
 #+END_SRC
 
 ** Нюанс №2. Нахождение самого черного изображения.
@@ -695,7 +699,7 @@ append-image принимает 2 массива с изображениями, 
 и возвращает склеенный массив.
 
 #+NAME: append-image
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
 (defun append-image (image-up image-down y-point)
   (destructuring-bind (height-down width-down &optional colors-down)
@@ -762,6 +766,7 @@ append-image принимает 2 массива с изображениями, 
 ;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
 
 <<analysis>>
+
 #+END_SRC
 
 ** Нюанс №3. Анализ изображений.
@@ -782,7 +787,7 @@ append-image принимает 2 массива с изображениями, 
 умолчанию равен 25% от общего количества пикселей в области наложения.
 
 #+NAME: analysis
-#+BEGIN_SRC lisp
+#+BEGIN_SRC lisp :noweb yes
 
   (defun analysis (xored-image y-point &optional border)
     "Принимает отксоренное изображение и y-координату  наложения,
@@ -803,7 +808,7 @@ append-image принимает 2 массива с изображениями, 
             (/ pix-amount 4)
             (progn
               ;; в противном случае высчитываем границу
-              (setf border (* (float (/ border pix-amount)) 100))
+              (setf border (* (float (/ border 100)) pix-amount))
               ;;(format t "~% intesect-height ~A " intesect-height)
               ;; если картинки full-color
               (if colors
@@ -845,7 +850,7 @@ append-image принимает 2 массива с изображениями, 
   ;;          (arr2 (binarization (load-png "~/Pictures/test-bin.png") 200))
   ;;          (array (xor-area arr1 arr2 200))
   ;;          (results (cons (analysis
-  ;;                          array 200 10)
+  ;;                          array 200 80)
   ;;                         200)))
   ;;     (format t " ~% results ~A" results)))
 
@@ -881,10 +886,11 @@ append-image принимает 2 массива с изображениями, 
 
 * Экспорт
 
+Теперь можно экспортировать некоторые функции и переметиться в созданный пакет
+
 #+NAME: cur_package
 #+BEGIN_SRC lisp :noweb yes
 
-Теперь можно экспортировать некоторые функции и переметиться в созданный пакет
 (defpackage #:cl-autogui
   (:use #:common-lisp #:xlib)
   (:export #:x-position
