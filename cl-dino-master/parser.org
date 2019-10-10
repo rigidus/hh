@@ -1,12 +1,18 @@
 #+STARTUP: showall indent hidestars
 
 * Введение
+
 Цель данной программы - распарсить сайт. Делать мы это будем, опираясь на считывание
-текста с картинки. Для этого нам понадобятся разнообразные библиотеки
+текста с картинки. Для этого нам понадобятся разнообразные библиотеки.
+
+[COMMENT:gmm] Я перенес =defpackage= в блок, где мы загружаем библиотеки,
+потому что если ты хочешь иметь возможность исполнять код из отдельных
+блоков кода, то они должны работать в том же пакете, в котором объявлены
+функции и переменные. А узнать в каком пакете они могут только по форме
+~in-package~.
 
 #+NAME: libs
 #+BEGIN_SRC lisp :noweb yes
-
   (eval-when (:compile-toplevel :load-toplevel :execute)
     #-clx
     (ql:quickload 'clx)
@@ -18,10 +24,26 @@
     (ql:quickload :bt-semaphore)
     (ql:quickload :thread-pool))
 
-<<cur_package>>
-
-<<defparams>>
-
+  (defpackage #:cl-autogui
+    (:use #:common-lisp #:xlib)
+    (:export #:x-position
+             #:x-size
+             #:x-position
+             #:x-move
+             #:x-mouse-down
+             #:x-mouse-up
+             #:x-click
+             #:x-dbclick
+             #:x-vscroll
+             #:x-hscroll
+             #:x-scroll
+             #:x-key-down
+             #:x-key-up
+             #:x-press
+             #:x-snapshot
+             #:x-snapsearch
+             #:x-get-color
+             #:x-find-color))
 #+END_SRC
 
 Так же нам понадобятся некоторые глобальные переменные, например, keysym-ы, размеры
@@ -29,6 +51,8 @@
 
 #+NAME: defparams
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
+
   (defparameter *langs* "rus+eng")
   (defparameter *default-width* 1295)
   (defparameter *default-height* 668)
@@ -41,8 +65,8 @@
   (defparameter *mouse-left* 1)
   (defparameter *mouse-middle* 2)
   (defparameter *hh-teaser-url*
-    "https://hh.ru/search/vacancy?L_is_autosearch=false&area=2&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A"
-    "https://spb.hh.ru/search/vacancy?L_is_autosearch=false&area=1&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page=~A")
+    "https://hh.ru/search/vacancy?L_is_autosearch~false&area=2&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page~~A"
+    "https://spb.hh.ru/search/vacancy?L_is_autosearch~false&area=1&clusters=true&enable_snippets=true&items_on_page=100&only_with_salary=true&salary=165000&specialization=1.221&page~~A")
 
   (defparameter *browser-path*  "/usr/bin/firefox")
 #+END_SRC
@@ -50,11 +74,13 @@
 * Получение скрина
 
 Чтоб получить скрины с какого-либо сайта, надо сначала открыть сам сайт.
-С помощью run-programm запускаем браузер (в нашем случае это firefox) с заданным
-URL.
+С помощью ~run-programm~ запускаем браузер (в нашем случае это firefox) с
+заданным URL.
 
 #+NAME: open-browser
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
+
   (defun open-browser (browser-path url)
     (let ((proc (sb-ext:run-program
                  `,browser-path
@@ -71,10 +97,7 @@ URL.
       (format t "~% open-browser: didn't run firefox"))))
 
   ;; (block open-browser-test
-  ;; (open-browser "/usr/bin/firefox"
-  ;;               *hh-teaser-url*)
-  ;;
-
+  ;;  (open-browser "/usr/bin/firefox" *hh-teaser-url*))
 #+END_SRC
 
 Браузер открыли. Теперь хорошо бы сделать скрин. Но прежде чем его делать,
@@ -82,39 +105,38 @@ URL.
 
 #+NAME: display-macros
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
 
-(defmacro with-display (host (display screen root-window) &body body)
-  `(let* ((,display (xlib:open-display ,host))
-          (,screen (first (xlib:display-roots ,display)))
-          (,root-window (xlib:screen-root ,screen)))
-     (unwind-protect (progn ,@body)
-       (xlib:close-display ,display))))
+  (defmacro with-display (host (display screen root-window) &body body)
+    `(let* ((,display (xlib:open-display ,host))
+            (,screen (first (xlib:display-roots ,display)))
+            (,root-window (xlib:screen-root ,screen)))
+       (unwind-protect (progn ,@body)
+         (xlib:close-display ,display))))
 
-(defmacro with-default-display ((display &key (force nil)) &body body)
-  `(let ((,display (open-default-display)))
-     (unwind-protect
-          (unwind-protect
-               ,@body
-            (when ,force
-              (display-force-output ,display)))
-       (close-display ,display))))
+  (defmacro with-default-display ((display &key (force nil)) &body body)
+    `(let ((,display (open-default-display)))
+       (unwind-protect
+            (unwind-protect
+                 ,@body
+              (when ,force
+                (display-force-output ,display)))
+         (close-display ,display))))
 
-(defmacro with-default-display-force ((display) &body body)
-  `(with-default-display (,display :force t) ,@body))
+  (defmacro with-default-display-force ((display) &body body)
+    `(with-default-display (,display :force t) ,@body))
 
-(defmacro with-default-screen ((screen) &body body)
-  (let ((display (gensym)))
-    `(with-default-display (,display)
-       (let ((,screen (display-default-screen ,display)))
-         ,@body))))
+  (defmacro with-default-screen ((screen) &body body)
+    (let ((display (gensym)))
+      `(with-default-display (,display)
+         (let ((,screen (display-default-screen ,display)))
+           ,@body))))
 
-(defmacro with-default-window ((window) &body body)
-  (let ((screen (gensym)))
-    `(with-default-screen (,screen)
-       (let ((,window (screen-root ,screen)))
-         ,@body))))
-
-
+  (defmacro with-default-window ((window) &body body)
+    (let ((screen (gensym)))
+      `(with-default-screen (,screen)
+         (let ((,window (screen-root ,screen)))
+           ,@body))))
 #+END_SRC
 
 Теперь можно получить и функцию, которая сделает нам скрин.
@@ -126,9 +148,11 @@ URL.
 
 #+NAME: x-snapshot
 #+BEGIN_SRC lisp :noweb yes
-<<raw_image_png>>
+  (in-package  #:cl-autogui)
 
-(defun x-snapshot (&key (x *default-x*) (y *default-y*)
+  <<raw_image_png>>
+
+  (defun x-snapshot (&key (x *default-x*) (y *default-y*)
                        (width  *default-width*) (height *default-height*)
                        path)
     ;; "Return RGB data array (The dimensions correspond to the height, width,
@@ -153,6 +177,10 @@ URL.
                 (t (error "Only PNG file is supported"))))
             (zpng:data-array image)))))
 
+  ;; (block save-load-binarixation-test
+  ;;   (x-snapshot :x *snap-height*
+  ;;               :width  *snap-width*
+  ;;               :path "~/Pictures/snapshot-test.png"))
 #+END_SRC
 
 Внимательный читатель заметил, что x-snapshot вызывает raw-image->png. Зачем? Дело в
@@ -161,23 +189,24 @@ URL.
 
 #+NAME: raw_image_png
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
 
-(defun raw-image->png (data width height)
-  (let* ((png (make-instance 'zpng:png :width width :height height
-                             :color-type :truecolor-alpha
-                             :image-data data))
-         (data (zpng:data-array png)))
-    (dotimes (y height)
-      (dotimes (x width)
-        ;; BGR -> RGB, ref code: https://goo.gl/slubfW
-        ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
-        (rotatef (aref data y x 0) (aref data y x 2))
-        (setf (aref data y x 3) 255)))
-    png))
-
+  (defun raw-image->png (data width height)
+    (let* ((png (make-instance 'zpng:png :width width :height height
+                               :color-type :truecolor-alpha
+                               :image-data data))
+           (data (zpng:data-array png)))
+      (dotimes (y height)
+        (dotimes (x width)
+          ;; BGR -> RGB, ref code: https://goo.gl/slubfW
+          ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
+          (rotatef (aref data y x 0) (aref data y x 2))
+          (setf (aref data y x 3) 255)))
+      png))
 #+END_SRC
 
 * Работа с изображениями
+
 Потрясающе! Теперь мы можем получить скрин. Но что насчет его сохранения,
 загрузки изображения, его бинаризации и т.д.?
 
@@ -186,87 +215,88 @@ URL.
 
 #+NAME: save-png
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-(defun save-png (width height pathname-str image
-                 &optional (color-type :truecolor-alpha))
-  (let* ((png (make-instance 'zpng:png :width width :height height
-                             :color-type color-type))
-         (vector (make-array ;; displaced vector - need copy for save
-                  (* height width (zpng:samples-per-pixel png))
-                  :displaced-to image :element-type '(unsigned-byte 8))))
-    ;; Тут применен потенциально опасный трюк, когда мы создаем
-    ;; объект PNG без данных, а потом добавляем в него данные,
-    ;; используя неэкспортируемый writer.
-    ;; Это нужно чтобы получить третью размерность массива,
-    ;; который мы хотим передать как данные и при этом
-    ;; избежать создания для этого временного объекта
-    (setf (zpng::%image-data png) (copy-seq vector))
-    (zpng:write-png png pathname-str)))
+  (defun save-png (width height pathname-str image
+                   &optional (color-type :truecolor-alpha))
+    (let* ((png (make-instance 'zpng:png :width width :height height
+                               :color-type color-type))
+           (vector (make-array ;; displaced vector - need copy for save
+                    (* height width (zpng:samples-per-pixel png))
+                    :displaced-to image :element-type '(unsigned-byte 8))))
+      ;; Тут применен потенциально опасный трюк, когда мы создаем
+      ;; объект PNG без данных, а потом добавляем в него данные,
+      ;; используя неэкспортируемый writer.
+      ;; Это нужно чтобы получить третью размерность массива,
+      ;; который мы хотим передать как данные и при этом
+      ;; избежать создания для этого временного объекта
+      (setf (zpng::%image-data png) (copy-seq vector))
+      (zpng:write-png png pathname-str)))
 
-<<load_png>>
+  <<load_png>>
 
-<<binarization>>
+  <<binarization>>
 
-<<save-load-binarization-test>>
+  ;; <<save-load-binarization-test>>
 #+END_SRC
 
 Сохранили? Теперь бы еще неплохо бы загрузить изображение.
-Load-png принимает путь к файлу, а возвращает его массив типа
-zpng:data-array.
+~Load-png~ принимает путь к файлу, а возвращает его массив типа
+~zpng:data-array~.
 
 #+NAME: load_png
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
 
-(defun load-png (pathname-str)
-  "Возвращает массив size-X столбцов по size-Y точек,
-   где столбцы идут слева-направо, а точки в них - сверху-вниз
-   ----
-   В zpng есть указание на возможные варианты COLOR:
-   ----
-         (defmethod samples-per-pixel (png)
-           (ecase (color-type png)
-             (:grayscale 1)
-             (:truecolor 3)
-             (:indexed-color 1)
-             (:grayscale-alpha 2)
-             (:truecolor-alpha 4)))
-  "
-  (let* ((png (png-read:read-png-file pathname-str))
-         (image-data (png-read:image-data png))
-         (color (png-read:colour-type png))
-         (dims (cond ((or (equal color :truecolor-alpha)
-                          (equal color :truecolor))
-                      (list (array-dimension image-data 1)
-                            (array-dimension image-data 0)
-                            (array-dimension image-data 2)))
-                     ((or (equal color :grayscale)
-                          (equal color :greyscale))
-                      (list (array-dimension image-data 1)
-                            (array-dimension image-data 0)))
-                     (t (error 'unk-png-color-type :color color))))
-         (result ;; меняем размерности X и Y местами
-          (make-array dims :element-type '(unsigned-byte 8))))
-    ;; (format t "~% new-arr ~A "(array-dimensions result))
-    ;; ширина, высота, цвет => высота, ширина, цвет
-    (macrolet ((cycle (&body body)
-                 `(do ((y 0 (incf y)))
-                      ((= y (array-dimension result 0)))
-                    (do ((x 0 (incf x)))
-                        ((= x (array-dimension result 1)))
-                      ,@body))))
-      (cond ((or (equal color :truecolor-alpha)
-                 (equal color :truecolor))
-             (cycle (do ((z 0 (incf z)))
-                        ((= z (array-dimension result 2)))
-                      (setf (aref result y x z)
-                            (aref image-data x y z)))))
-            ((or (equal color :grayscale)
-                 (equal color :greyscale))
-             (cycle (setf (aref result y x)
-                          (aref image-data x y))))
-            (t (error 'unk-png-color-type :color color)))
-      result)))
-
+  (defun load-png (pathname-str)
+    "Возвращает массив size-X столбцов по size-Y точек,
+     где столбцы идут слева-направо, а точки в них - сверху-вниз
+     ----
+     В zpng есть указание на возможные варианты COLOR:
+     ----
+           (defmethod samples-per-pixel (png)
+             (ecase (color-type png)
+               (:grayscale 1)
+               (:truecolor 3)
+               (:indexed-color 1)
+               (:grayscale-alpha 2)
+               (:truecolor-alpha 4)))
+    "
+    (let* ((png (png-read:read-png-file pathname-str))
+           (image-data (png-read:image-data png))
+           (color (png-read:colour-type png))
+           (dims (cond ((or (equal color :truecolor-alpha)
+                            (equal color :truecolor))
+                        (list (array-dimension image-data 1)
+                              (array-dimension image-data 0)
+                              (array-dimension image-data 2)))
+                       ((or (equal color :grayscale)
+                            (equal color :greyscale))
+                        (list (array-dimension image-data 1)
+                              (array-dimension image-data 0)))
+                       (t (error 'unk-png-color-type :color color))))
+           (result ;; меняем размерности X и Y местами
+            (make-array dims :element-type '(unsigned-byte 8))))
+      ;; (format t "~% new-arr ~A "(array-dimensions result))
+      ;; ширина, высота, цвет => высота, ширина, цвет
+      (macrolet ((cycle (&body body)
+                   `(do ((y 0 (incf y)))
+                        ((= y (array-dimension result 0)))
+                      (do ((x 0 (incf x)))
+                          ((= x (array-dimension result 1)))
+                        ,@body))))
+        (cond ((or (equal color :truecolor-alpha)
+                   (equal color :truecolor))
+               (cycle (do ((z 0 (incf z)))
+                          ((= z (array-dimension result 2)))
+                        (setf (aref result y x z)
+                              (aref image-data x y z)))))
+              ((or (equal color :grayscale)
+                   (equal color :greyscale))
+               (cycle (setf (aref result y x)
+                            (aref image-data x y))))
+              (t (error 'unk-png-color-type :color color)))
+        result)))
 #+END_SRC
 
 Ну и вишенка на торте - бинаризация изображения. Зачем? Во-первых, анализировать
@@ -280,43 +310,43 @@ zpng:data-array.
 
 #+NAME: binarization
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-<<condition>>
+  <<condition>>
 
-(defun binarization (image &optional threshold)
-  (let* ((dims (array-dimensions image))
-         (new-dims (cond ((equal 3 (length dims))  (butlast dims))
-                         ((equal 2 (length dims))  dims)
-                         (t (error 'binarization-error))))
-         (result (make-array new-dims :element-type '(unsigned-byte 8))))
-    (macrolet ((cycle (&body body)
-                 `(do ((y 0 (incf y)))
-                      ((= y (array-dimension image 0)))
-                    (do ((x 0 (incf x)))
-                        ((= x (array-dimension image 1)))
-                      ,@body))))
-      (cond ((equal 3 (length dims))
-             (cycle (do ((z 0 (incf z)))
-                        ((= z (array-dimension image 2)))
-                      (let ((avg (floor (+ (aref image y x 0)
-                                           (aref image y x 1)
-                                           (aref image y x 2))
-                                        3)))
+  (defun binarization (image &optional threshold)
+    (let* ((dims (array-dimensions image))
+           (new-dims (cond ((equal 3 (length dims))  (butlast dims))
+                           ((equal 2 (length dims))  dims)
+                           (t (error 'binarization-error))))
+           (result (make-array new-dims :element-type '(unsigned-byte 8))))
+      (macrolet ((cycle (&body body)
+                   `(do ((y 0 (incf y)))
+                        ((= y (array-dimension image 0)))
+                      (do ((x 0 (incf x)))
+                          ((= x (array-dimension image 1)))
+                        ,@body))))
+        (cond ((equal 3 (length dims))
+               (cycle (do ((z 0 (incf z)))
+                          ((= z (array-dimension image 2)))
+                        (let ((avg (floor (+ (aref image y x 0)
+                                             (aref image y x 1)
+                                             (aref image y x 2))
+                                          3)))
+                          (when threshold
+                            (if (< threshold avg)
+                                (setf avg 255)
+                                (setf avg 0)))
+                          (setf (aref result y x) avg)))))
+              ((equal 2 (length dims))
+               (cycle (let ((avg (aref image y x)))
                         (when threshold
                           (if (< threshold avg)
                               (setf avg 255)
                               (setf avg 0)))
-                        (setf (aref result y x) avg)))))
-            ((equal 2 (length dims))
-             (cycle (let ((avg (aref image y x)))
-                      (when threshold
-                        (if (< threshold avg)
-                            (setf avg 255)
-                            (setf avg 0)))
-                      (setf (aref result y x) avg))))
-            (t (error 'binarization-error))))
-    result))
-
+                        (setf (aref result y x) avg))))
+              (t (error 'binarization-error))))
+      result))
 #+END_SRC
 
 Хорошо бы еще засечь ошибку, когда мы пытаемся прочитать png,
@@ -324,142 +354,160 @@ zpng:data-array.
 
 #+NAME: condition
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-;; Ошибка, возникающая когда мы пытаемся прочитать png
-;; в котором неизвестно сколько байт на точку
-(define-condition unk-png-color-type (error)
-  ((color :initarg :color :reader color))
-  (:report
-   (lambda (condition stream)
-     (format stream "Error in LOAD-PNG: unknown color type: ~A"
-             (color condition)))))
-
+  ;; Ошибка, возникающая когда мы пытаемся прочитать png
+  ;; в котором неизвестно сколько байт на точку
+  (define-condition unk-png-color-type (error)
+    ((color :initarg :color :reader color))
+    (:report
+     (lambda (condition stream)
+       (format stream "Error in LOAD-PNG: unknown color type: ~A"
+               (color condition)))))
 #+END_SRC
 
 Последнее, чего нам не хватает - это тесты, чтоб проверить всю эту красоту.
 
 #+NAME: save-load-binarization-test
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
 
-  ;; (block save-load-binarixation-test
-  ;;   (x-snapshot :x 440 :width  *snap-width*
-  ;;               :path "~/Pictures/test.png")
-  ;;   (let* ((image (load-png "~/Pictures/test.png"))
-  ;;          (image (binarization image 200)))
-  ;;     (destructuring-bind (dh dw)
-  ;;         (array-dimensions image)
-  ;;       (save-png dw dh "~/Pictures/test-bin.png"
-  ;;                image  :grayscale))))
+  (block save-load-binarixation-test
+    (x-snapshot :x 440 :width  *snap-width*
+                :path "~/Pictures/test.png")
+    (let* ((image (load-png "~/Pictures/test.png"))
+           (image (binarization image 200)))
+      (destructuring-bind (dh dw)
+          (array-dimensions image)
+        (save-png dw dh "~/Pictures/test-bin.png"
+                 image  :grayscale))))
 
-
-  ;; (block save-load-full-color-test
-  ;;   (x-snapshot :x 440 :width *snap-width*
-  ;;               :path "~/Pictures/test.png")
-  ;;   (sleep .1)
-  ;;   (let* ((image (load-png "~/Pictures/test.png")))
-  ;;   (destructuring-bind (dh dw colors)
-  ;;       (array-dimensions image)
-  ;;     (save-png dw dh "~/Pictures/test-full-color.png" image))))
-
+  (block save-load-full-color-test
+    (x-snapshot :x 440 :width *snap-width*
+                :path "~/Pictures/test.png")
+    (sleep .1)
+    (let* ((image (load-png "~/Pictures/test.png")))
+    (destructuring-bind (dh dw colors)
+        (array-dimensions image)
+      (save-png dw dh "~/Pictures/test-full-color.png" image))))
 #+END_SRC
 
 * фейковые события клавиатуры
+:PROPERTIES:
+:xtest: xlib/xtest
+:END:
+
+NB: По какой-то странной причине (предположительно - разные версии
+библиотеки-враппера ~xlib~) тут есть проблема с вызовом функций из пакета
+~xtest=. В одной конфигурации пакет должен быть обьявлен как =xtest~, а в
+другой - как ~xlib/xtest~. Чтобы нивелировать подобные различия я
+использовал механизм ~properties=, объявив property =xtest~ и обращаясь к
+нему когда мы танглим исходный код в файл. Теперь будет достаточно
+изменить это в одном месте и перегенерировать код.
+
+#+NAME: get_property
+#+BEGIN_SRC elisp :var prop=""
+  (org-entry-get nil prop t)
+#+END_SRC
 
 Итак, мы невероятные молодцы, научились делать скрин и взаимодейстсовть с ним. Но чтоб
 парсить сайт, надо странички скролить, на ссылочки нажимать и вообще симулировать
 бурную деятельность.
 
-В этом нам помогут следующие вспомогаетльные функции.
+В этом нам помогут следующие вспомогательные функции.
+
 #+NAME: fake-events
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-(defun x-size ()
-  (with-default-screen (s)
-    (values
-     (screen-width s)
-     (screen-height s))))
+  (defun x-size ()
+    (with-default-screen (s)
+      (values
+       (screen-width s)
+       (screen-height s))))
 
-(defun x-move (x y)
-  (if (and (integerp x) (integerp y))
-      (with-default-display-force (d)
-        (xtest:fake-motion-event d x y))
-      (error "Integer only for position, (x: ~S, y: ~S)" x y)))
+  (defun x-move (x y)
+    (if (and (integerp x) (integerp y))
+        (with-default-display-force (d)
+          (<<get_property("xtest")>>:fake-motion-event d x y))
+        (error "Integer only for position, (x: ~S, y: ~S)" x y)))
 
-(defun mklist (obj)
-  (if (and
-       (listp obj)
-       (not (null obj)))
-      obj (list obj)))
+  (defun mklist (obj)
+    (if (and
+         (listp obj)
+         (not (null obj)))
+        obj (list obj)))
 
-(defmacro defun-with-actions (name params actions &body body)
-  ;;     "This macro defun a function which witch do mouse or keyboard actions,
-  ;; body is called on each action."
-  `(defun ,name ,params
-     (mapcar
-      #'(lambda (action)
-          ,@body)
-      (mklist ,actions))))
+  (defmacro defun-with-actions (name params actions &body body)
+    ;; "This macro defun a function which witch do mouse or keyboard actions,
+    ;; body is called on each action."
+    `(defun ,name ,params
+       (mapcar
+        #'(lambda (action)
+            ,@body)
+        (mklist ,actions))))
 
-(macrolet ((def (name actions)
-             `(defun-with-actions ,name
-                  (&key (button 1) x y)
-                  ,actions
-                (funcall #'perform-mouse-action
-                         action button :x x :y y))))
-  (def x-mouse-down t)
-  (def x-mouse-up nil)
-  (def x-click '(t nil))
-  (def x-dbclick '(t nil t nil)))
+  (macrolet ((def (name actions)
+               `(defun-with-actions ,name
+                    (&key (button 1) x y)
+                    ,actions
+                  (funcall #'perform-mouse-action
+                           action button :x x :y y))))
+    (def x-mouse-down t)
+    (def x-mouse-up nil)
+    (def x-click '(t nil))
+    (def x-dbclick '(t nil t nil)))
 
-(defmacro with-scroll (pos neg clicks x y)
-  `(let ((button (cond
-                   ((= 0 ,clicks) nil)
-                   ((> 0 ,clicks) ,pos) ; scroll up/right
-                   ((< 0 ,clicks) ,neg)))) ; scroll down/left
-     (dotimes (_ (abs ,clicks))
-       (x-click :button button :x ,x :y ,y))))
+  (defmacro with-scroll (pos neg clicks x y)
+    `(let ((button (cond
+                     ((= 0 ,clicks) nil)
+                     ((> 0 ,clicks) ,pos)    ; scroll up/right
+                     ((< 0 ,clicks) ,neg)))) ; scroll down/left
+       (dotimes (_ (abs ,clicks))
+         (x-click :button button :x ,x :y ,y))))
 
-(defun x-vscroll (clicks &key x y)
-  (with-scroll 4 5 clicks x y))
+  (defun x-vscroll (clicks &key x y)
+    (with-scroll 4 5 clicks x y))
 
-(defun x-scroll (clicks &key x y)
-  (x-vscroll clicks :x x :y y))
+  (defun x-scroll (clicks &key x y)
+    (x-vscroll clicks :x x :y y))
 
-(defun x-hscroll (clicks &key x y)
-  (with-scroll 7 6 clicks x y))
+  (defun x-hscroll (clicks &key x y)
+    (with-scroll 7 6 clicks x y))
 
-(macrolet ((def (name actions)
-             `(defun-with-actions ,name (keycode)
-                  ,actions
-                (funcall #'perform-key-action
-                         action keycode))))
-  (def x-key-down t)
-  (def x-key-up nil)
-  (def x-press '(t nil)))
+  (macrolet ((def (name actions)
+               `(defun-with-actions ,name (keycode)
+                    ,actions
+                  (funcall #'perform-key-action
+                           action keycode))))
+    (def x-key-down t)
+    (def x-key-up nil)
+    (def x-press '(t nil)))
 
-<<mouse-and-key-actions>>
-
+  <<mouse-and-key-actions>>
 #+END_SRC
 
 Глядя на все это многообразие можно ужаснуться, но напрямую мы будем взаимодейстсовать
 только с этими двумя функциями.
 
-perform-mouse-action создает фейковое событие мышки, а perform-key-action создает
+~perform-mouse-action= создает фейковое событие мышки, а =perform-key-action~ создает
 фейковое событие клаиватуры. Обе функции принимают первым параметров t или nil, что
 соответствует "нажать" и "отпустить" в переводе на человеческий, затем
-keysym. perform-mouse-action принимает еще и координаты, куда следует кликнуть
+~keysym=. =perform-mouse-action~ принимает еще и координаты, куда следует кликнуть
 "мышкой".
 
 #+NAME: mouse-and-key-actions
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
+
   (defun perform-mouse-action (press? button &key x y)
     (and x y (x-move x y))
     (with-default-display-force (d)
-      (xtest:fake-button-event d button press?)))
+      (<<get_property("xtest")>>:fake-button-event d button press?)))
 
   (defun perform-key-action (press? keycode) ; use xev to get keycode
     (with-default-display-force (d)
-      (xtest:fake-key-event d keycode press?)))
+      (<<get_property("xtest")>>:fake-key-event d keycode press?)))
 
   ;; (block perform-key-action-test
   ;;   (perform-key-action t 116)
@@ -470,7 +518,6 @@ keysym. perform-mouse-action принимает еще и координаты, 
   ;;   (perform-mouse-action t *mouse-left* :x 100 :y 100)
   ;;   (sleep .1)
   ;;   (perform-mouse-action nil *mouse-left* :x 100 :y 100))
-
 #+END_SRC
 
 * анализ и склейка изображений
@@ -483,7 +530,7 @@ keysym. perform-mouse-action принимает еще и координаты, 
 тесеракту.
 
 Как понять, где клеить?
-Для этого воспользуемся простой логической операцией xor. Xor  - "исключающее или",
+Для этого воспользуемся простой логической операцией ~xor~. Xor  - "исключающее или",
 по-другому, - выдает 0, если 2 его операнда совпадают, и дает 1, если операнды не
 совпадают. Мы возьмем 2 скрина и будем строчка за строчкой накладывать последний скрин
 на предыдущий до тех пор, пока не увидим максимально черное изображение. Ведь это
@@ -503,6 +550,7 @@ keysym. perform-mouse-action принимает еще и координаты, 
 
 #+NAME: make-bit-image
 #+BEGIN_SRC lisp
+  (in-package  #:cl-autogui)
 
   (defun make-bit-image (image-data)
     (destructuring-bind (height width &optional colors)
@@ -527,92 +575,93 @@ keysym. perform-mouse-action принимает еще и координаты, 
   ;;      (let* ((bit-arr1
   ;;              (make-bit-image (load-png "~/Pictures/test-bin.png"))))
   ;;        (format t "~% ~A" bit-arr1))))
-
 #+END_SRC
 
 Теперь, когда мы получили битовый массив, хорошо бы разобраться с xor-ом. Для этого
-напишем две функции: append-xor и xor-area.
-Append-xor принимает 2 массива изображений и высоту, где второе изображение будет
+напишем две функции: ~append-xor= и =xor-area~.
+
+~Append-xor~ принимает 2 массива изображений и высоту, где второе изображение будет
 наложено на первое с помощью XOR. Изображения должны быть одинаковой ширины
-и иметь одинаковое количество байт на пиксель.  Возвращает склеенный массив.
+и иметь одинаковое количество байт на пиксель. Возвращает склеенный массив.
 
 #+NAME: append-xor
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-(defun append-xor (image-up image-down y-point)
-  (destructuring-bind (height-up width-up &optional colors-up)
-      (array-dimensions image-up)
-    (destructuring-bind (height-down width-down &optional colors-down)
-        (array-dimensions image-down)
-      (assert (equal width-up width-down))
-      (assert (equal colors-up colors-down))
-      (let* ((new-height (+ height-down y-point))
-             (new-dims (if (null colors-down)
-                           (list new-height width-down)
-                           (list new-height width-down colors-down)))
-             (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
-        ;; макрос для прохода по блоку точек
-        (macrolet ((cycle ((py px height width &optional &body newline)
-                           &body body)
-                     `(do ((qy ,py (incf qy)))
-                          ((= qy ,height))
-                        (do ((qx ,px (incf qx)))
-                            ((= qx ,width))
-                          ,@body)
-                        ,@newline)))
-          ;; копируем первую картинку в новый массив
-          ;; от ее начала до ее конца (NB: тут отличие от append-image)
-          (if (null colors-up)
-              (cycle (0 0 height-up width-up)
-                     (setf (aref image-new qy qx)
-                           (aref image-up qy qx)))
-              ;; else
-              (cycle (0 0 height-up width-up)
-                     (do ((qz 0 (incf qz)))
-                         ((= qz colors-up))
-                       (setf (aref image-new qy qx qz)
-                             (aref image-up qy qx qz)))))
-          ;; xor-им вторую картинку в новый массив
-          ;; от ее начала до конца
-          (if (null colors-down)
-              (let ((new-y y-point))
-                (cycle (0 0 height-down width-down (incf new-y))
-                       (setf (aref image-new new-y qx)
-                             (logxor (aref image-new new-y qx)
-                                     (aref image-down qy qx)))))
-              ;; else
-              (let ((new-y y-point))
-                (cycle (0 0 height-down width-down (incf new-y))
-                       ;; ксорим 3 цвета
-                       (do ((rz 0 (incf rz)))
-                           ((= rz colors-down))
-                         (setf (aref image-new new-y qx rz)
-                               (logxor (aref image-new new-y qx rz)
-                                       (aref image-down qy qx rz))))
-                       ;; копируем альфа-канал
-                           (setf (aref image-new new-y qx 3)
-                                 (aref image-down qy qx 3))
-                       ))))
-        image-new))))
+  (defun append-xor (image-up image-down y-point)
+    (destructuring-bind (height-up width-up &optional colors-up)
+        (array-dimensions image-up)
+      (destructuring-bind (height-down width-down &optional colors-down)
+          (array-dimensions image-down)
+        (assert (equal width-up width-down))
+        (assert (equal colors-up colors-down))
+        (let* ((new-height (+ height-down y-point))
+               (new-dims (if (null colors-down)
+                             (list new-height width-down)
+                             (list new-height width-down colors-down)))
+               (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+          ;; макрос для прохода по блоку точек
+          (macrolet ((cycle ((py px height width &optional &body newline)
+                             &body body)
+                       `(do ((qy ,py (incf qy)))
+                            ((= qy ,height))
+                          (do ((qx ,px (incf qx)))
+                              ((= qx ,width))
+                            ,@body)
+                          ,@newline)))
+            ;; копируем первую картинку в новый массив
+            ;; от ее начала до ее конца (NB: тут отличие от append-image)
+            (if (null colors-up)
+                (cycle (0 0 height-up width-up)
+                       (setf (aref image-new qy qx)
+                             (aref image-up qy qx)))
+                ;; else
+                (cycle (0 0 height-up width-up)
+                       (do ((qz 0 (incf qz)))
+                           ((= qz colors-up))
+                         (setf (aref image-new qy qx qz)
+                               (aref image-up qy qx qz)))))
+            ;; xor-им вторую картинку в новый массив
+            ;; от ее начала до конца
+            (if (null colors-down)
+                (let ((new-y y-point))
+                  (cycle (0 0 height-down width-down (incf new-y))
+                         (setf (aref image-new new-y qx)
+                               (logxor (aref image-new new-y qx)
+                                       (aref image-down qy qx)))))
+                ;; else
+                (let ((new-y y-point))
+                  (cycle (0 0 height-down width-down (incf new-y))
+                         ;; ксорим 3 цвета
+                         (do ((rz 0 (incf rz)))
+                             ((= rz colors-down))
+                           (setf (aref image-new new-y qx rz)
+                                 (logxor (aref image-new new-y qx rz)
+                                         (aref image-down qy qx rz))))
+                         ;; копируем альфа-канал
+                         (setf (aref image-new new-y qx 3)
+                               (aref image-down qy qx 3))
+                         ))))
+          image-new))))
 
-;; (time
-;;  (block test-append-xor-fullcolor
-;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 500 :height 300))
-;;           (arr2 (x-snapshot :x 0 :y 100 :width 500 :height 300))
-;;           (result (append-xor arr1 arr2 200)))
-;;      (destructuring-bind (height width  &rest rest)
-;;          (array-dimensions result)
-;;        (save-png width height "~/Pictures/result.png" result)))))
+  ;; (time
+  ;;  (block test-append-xor-fullcolor
+  ;;    (let* ((arr1 (x-snapshot :x 0 :y 0 :width 500 :height 300))
+  ;;           (arr2 (x-snapshot :x 0 :y 100 :width 500 :height 300))
+  ;;           (result (append-xor arr1 arr2 200)))
+  ;;      (destructuring-bind (height width  &rest rest)
+  ;;          (array-dimensions result)
+  ;;        (save-png width height "~/Pictures/result.png" result)))))
 
-;; (block test-append-xor-grayscale
-;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
-;;          (arr2 (binarization (x-snapshot :x 0 :y 100 :width 755 :height 300)))
-;;          (array (append-xor arr1 arr2 200)))
-;;     (destructuring-bind (height width  &rest rest)
-;;         (array-dimensions array)
-;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
+  ;; (block test-append-xor-grayscale
+  ;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+  ;;          (arr2 (binarization (x-snapshot :x 0 :y 100 :width 755 :height 300)))
+  ;;          (array (append-xor arr1 arr2 200)))
+  ;;     (destructuring-bind (height width  &rest rest)
+  ;;         (array-dimensions array)
+  ;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
 
-<<xor_area>>
+  <<xor_area>>
 
 #+END_SRC
 
@@ -624,64 +673,67 @@ xor-area работает почти так же, как append-xor.
 
 #+NAME: xor_area
 #+BEGIN_SRC lisp :noweb yes
-(defun xor-area (image-up image-down y-point)
-  (destructuring-bind (height-up width-up &optional colors-up)
-      (array-dimensions image-up)
-    (destructuring-bind (height-down width-down &optional colors-down)
-        (array-dimensions image-down)
-      (assert (equal width-up width-down))
-      (assert (equal colors-up colors-down))
-      (let* ((new-height (+ height-down y-point))
-             (new-dims (if (null colors-down)
-                           (list new-height width-down)
-                           (list new-height width-down colors-down)))
-             (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
-        ;; макрос для прохода по блоку точек
-        (macrolet ((cycle ((py px height width &optional &body newline)
-                           &body body)
-                     `(do ((qy ,py (incf qy)))
-                          ((= qy ,height))
-                        (do ((qx ,px (incf qx)))
-                            ((= qx ,width))
-                          ,@body)
-                        ,@newline)))
-          ;; для бинарных изображений
-          (if (null colors-down)
-              (let ((new-y y-point))
-                ;; (- height-up y-point) = высота области наложения
-                (cycle (0 0 (- height-up y-point) width-down (incf new-y))
-                       (setf (aref image-new qy qx)
-                             (logxor (aref image-up new-y qx)
-                                     (aref image-down qy qx)))))
-              ;; для full-color изображений
-              (let ((new-y y-point))
-                (cycle (0 0 (- height-up y-point) width-down (incf new-y))
-                       ;; ксорим 3 цвета
-                       (do ((rz 0 (incf rz)))
-                           ((= rz (- colors-down 1)))
-                         (setf (aref image-new qy qx rz)
-                               (logxor (aref image-up new-y qx rz)
-                                       (aref image-down qy qx rz))))
-                       ;; копируем альфа-канал
-                       (setf (aref image-new qy qx 3)
-                             (aref image-down qy qx 3))
-                       ))))
-        image-new))))
+  (in-package  #:cl-autogui)
 
-;; (block xor-area-test
-;;   (time
-;;   (let* ((arr1 (binarization (load-png "~/Pictures/test-bin.png") 200))
-;;          (arr2 (binarization (load-png "~/Pictures/test-bin.png") 200))
-;;          (array (xor-area arr1 arr2 200)))
-;;              (destructuring-bind (height width  &rest rest)
-;;                 (array-dimensions array)
-;;                (save-png width height "~/Pictures/area.png" array :grayscale)))))
+  (defun xor-area (image-up image-down y-point)
+    (destructuring-bind (height-up width-up &optional colors-up)
+        (array-dimensions image-up)
+      (destructuring-bind (height-down width-down &optional colors-down)
+          (array-dimensions image-down)
+        (assert (equal width-up width-down))
+        (assert (equal colors-up colors-down))
+        (let* ((new-height (+ height-down y-point))
+               (new-dims (if (null colors-down)
+                             (list new-height width-down)
+                             (list new-height width-down colors-down)))
+               (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+          ;; макрос для прохода по блоку точек
+          (macrolet ((cycle ((py px height width &optional &body newline)
+                             &body body)
+                       `(do ((qy ,py (incf qy)))
+                            ((= qy ,height))
+                          (do ((qx ,px (incf qx)))
+                              ((= qx ,width))
+                            ,@body)
+                          ,@newline)))
+            ;; для бинарных изображений
+            (if (null colors-down)
+                (let ((new-y y-point))
+                  ;; (- height-up y-point) = высота области наложения
+                  (cycle (0 0 (- height-up y-point) width-down (incf new-y))
+                         (setf (aref image-new qy qx)
+                               (logxor (aref image-up new-y qx)
+                                       (aref image-down qy qx)))))
+                ;; для full-color изображений
+                (let ((new-y y-point))
+                  (cycle (0 0 (- height-up y-point) width-down (incf new-y))
+                         ;; ксорим 3 цвета
+                         (do ((rz 0 (incf rz)))
+                             ((= rz (- colors-down 1)))
+                           (setf (aref image-new qy qx rz)
+                                 (logxor (aref image-up new-y qx rz)
+                                         (aref image-down qy qx rz))))
+                         ;; копируем альфа-канал
+                         (setf (aref image-new qy qx 3)
+                               (aref image-down qy qx 3))
+                         ))))
+          image-new))))
 
-<<append-image>>
+  ;; (block xor-area-test
+  ;;   (time
+  ;;   (let* ((arr1 (binarization (load-png "~/Pictures/test-bin.png") 200))
+  ;;          (arr2 (binarization (load-png "~/Pictures/test-bin.png") 200))
+  ;;          (array (xor-area arr1 arr2 200)))
+  ;;              (destructuring-bind (height width  &rest rest)
+  ;;                 (array-dimensions array)
+  ;;                (save-png width height "~/Pictures/area.png" array :grayscale)))))
+
+  <<append-image>>
 
 #+END_SRC
 
 ** Нюанс №2. Нахождение самого черного изображения.
+
 Необходимые понятия:
 ~область наложения~ - область, где одно изображение накладывается
 на другое. Область наложения не может иметь бОльшую высоту, чем высота накладываемого
@@ -703,8 +755,9 @@ xor-area работает почти так же, как append-xor.
 сохранять результат в текущий пулл результатов. После того, как весь цикл накладывания пройден,
 выберем наилучший результат, а затем склеим.
 
-В качестве результата будем сохранять кол-во черных пискселей, кол-во белых пискселей и координату Y, на
-которой это кол-во было получено в виде cons-пары: (( черные_точки . белые точки ). y-point).
+В качестве результата будем сохранять кол-во черных пискселей, кол-во
+белых пискселей и координату ~Y~, на которой это кол-во было получено в
+виде cons-пары: (( черные_точки . белые точки ). y-point).
 
 Пожалуй, начнем с наиболее простого: склейка.
 
@@ -714,73 +767,73 @@ append-image принимает 2 массива с изображениями, 
 
 #+NAME: append-image
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-(defun append-image (image-up image-down y-point)
-  (destructuring-bind (height-down width-down &optional colors-down)
-      (array-dimensions image-down)
-    (let* ((new-height (+ height-down y-point))
-           (new-dims (if (null colors-down)
-                         (list new-height width-down)
-                         (list new-height width-down colors-down)))
-           (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
-      ;; макрос для прохода по блоку точек
-      (macrolet ((cycle ((py px height width &optional &body newline)
-                         &body body)
-                   `(do ((qy ,py (incf qy)))
-                        ((= qy ,height))
-                      (do ((qx ,px (incf qx)))
-                          ((= qx ,width))
-                        ,@body)
-                      ,@newline)))
-        ;; копируем первую картинку в новый массив
-        ;; от ее начала до точки склейки, или до ее конца,
-        ;; смотря что случится раньше
-        (if (null colors-down)  ;; TODO: тут надо проверять цвета первой картинки
-            ;;(cycle (0 0 (min height-down y-point) width-down)
-            (cycle (0 0 y-point width-down)
-                   (setf (aref image-new qy qx)
-                         (aref image-up qy qx)))
-            ;; else
-            (cycle (0 0 y-point width-down)
-                   (do ((qz 0 (incf qz)))
-                       ((= qz colors-down))
-                     (setf (aref image-new qy qx qz)
-                           (aref image-up qy qx qz)))))
-        ;; копируем вторую картинку в новый массив
-        ;; от ее начала до конца
-        (if (null colors-down)
-            (let ((new-y y-point))
-              (cycle (0 0 height-down width-down (incf new-y))
-                     (setf (aref image-new new-y qx)
-                           (aref image-down qy qx))))
-            ;; else
-            (let ((new-y y-point))
-              (cycle (0 0 height-down width-down (incf new-y))
-                     (do ((rz 0 (incf rz)))
-                         ((= rz colors-down))
-                       (setf (aref image-new new-y qx rz)
-                             (aref image-down qy qx rz)))))))
-      image-new)))
+  (defun append-image (image-up image-down y-point)
+    (destructuring-bind (height-down width-down &optional colors-down)
+        (array-dimensions image-down)
+      (let* ((new-height (+ height-down y-point))
+             (new-dims (if (null colors-down)
+                           (list new-height width-down)
+                           (list new-height width-down colors-down)))
+             (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+        ;; макрос для прохода по блоку точек
+        (macrolet ((cycle ((py px height width &optional &body newline)
+                           &body body)
+                     `(do ((qy ,py (incf qy)))
+                          ((= qy ,height))
+                        (do ((qx ,px (incf qx)))
+                            ((= qx ,width))
+                          ,@body)
+                        ,@newline)))
+          ;; копируем первую картинку в новый массив
+          ;; от ее начала до точки склейки, или до ее конца,
+          ;; смотря что случится раньше
+          (if (null colors-down)  ;; TODO: тут надо проверять цвета первой картинки
+              ;;(cycle (0 0 (min height-down y-point) width-down)
+              (cycle (0 0 y-point width-down)
+                     (setf (aref image-new qy qx)
+                           (aref image-up qy qx)))
+              ;; else
+              (cycle (0 0 y-point width-down)
+                     (do ((qz 0 (incf qz)))
+                         ((= qz colors-down))
+                       (setf (aref image-new qy qx qz)
+                             (aref image-up qy qx qz)))))
+          ;; копируем вторую картинку в новый массив
+          ;; от ее начала до конца
+          (if (null colors-down)
+              (let ((new-y y-point))
+                (cycle (0 0 height-down width-down (incf new-y))
+                       (setf (aref image-new new-y qx)
+                             (aref image-down qy qx))))
+              ;; else
+              (let ((new-y y-point))
+                (cycle (0 0 height-down width-down (incf new-y))
+                       (do ((rz 0 (incf rz)))
+                           ((= rz colors-down))
+                         (setf (aref image-new new-y qx rz)
+                               (aref image-down qy qx rz)))))))
+        image-new)))
 
-;; (block test-append-image-fullcolor
-;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
-;;          (arr2 (x-snapshot :x 100 :y 100 :width 755 :height 300))
-;;          (array (append-image arr1 arr2 200)))
-;;     (destructuring-bind (height width  &rest rest)
-;;         (array-dimensions array)
-;;       (save-png width height "~/Pictures/result.png" array))))
+  ;; (block test-append-image-fullcolor
+  ;;   (let* ((arr1 (x-snapshot :x 0 :y 0 :width 755 :height 300))
+  ;;          (arr2 (x-snapshot :x 100 :y 100 :width 755 :height 300))
+  ;;          (array (append-image arr1 arr2 200)))
+  ;;     (destructuring-bind (height width  &rest rest)
+  ;;         (array-dimensions array)
+  ;;       (save-png width height "~/Pictures/result.png" array))))
 
 
-;; (block test-append-image-grayscale
-;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
-;;          (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
-;;          (array (append-image arr1 arr2 200)))
-;;     (destructuring-bind (height width  &rest rest)
-;;         (array-dimensions array)
-;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
+  ;; (block test-append-image-grayscale
+  ;;   (let* ((arr1 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+  ;;          (arr2 (binarization (x-snapshot :x 0 :y 0 :width 755 :height 300)))
+  ;;          (array (append-image arr1 arr2 200)))
+  ;;     (destructuring-bind (height width  &rest rest)
+  ;;         (array-dimensions array)
+  ;;       (save-png width height "~/Pictures/result.png" array :grayscale))))
 
-<<analysis>>
-
+  <<analysis>>
 #+END_SRC
 
 ** Нюанс №3. Анализ изображений.
@@ -802,6 +855,8 @@ append-image принимает 2 массива с изображениями, 
 
 #+NAME: analysis
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
+
   (defun analysis (xored-image y-point &optional (border 50))
     "Принимает отксоренное изображение и y-координату  наложения,
      т.е. точку, от которой будет производиться анализ.
@@ -862,7 +917,6 @@ append-image принимает 2 массива с изображениями, 
   ;;                          array 200 80)
   ;;                         200)))
   ;;     (format t " ~% results ~A" results)))
-
 #+END_SRC
 
 ** Нюанс №4. Сборка.
@@ -875,16 +929,17 @@ append-image принимает 2 массива с изображениями, 
 потоки до бесконечности, создадим пулл из потоков (кол-во ядер - 1),
 которые будут брать задание по очереди и выполнять его.
 
-Для начала напишем функциб сбора данных.
+Для начала напишем функцию сбора данных.
 Если тасков еще/уже нет, мы считаем, что функция запускалась в первый раз и нам нужно
 сделать 2 скриншота, т.к. для составления задания нужна пара изображений.
 
 В противном случае мы загружаем предыдущее сохраненное изображение и делаем 1 новый
 скриншот.
 
-
 #+NAME: get_data
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
+
   (defun get-data (image-up-path image-down-path)
     ;; если тасков нет, а занчит, нет и пары изображений
     (if (null tasks)
@@ -935,33 +990,42 @@ append-image принимает 2 массива с изображениями, 
 Это функция, которая сделает нам задания для 2х изображений.
 На выходе вернет в tasks список вида (y-pont-ы снизу доверху (image-up . image-down)).
 Для пары картинок, где высота image-down = 10, таск будет:
+
 ( 9 8 7 6 5 4 3 2 1 0 (image-up . image-down))
 
 #+NAME: make_tasks
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-(let ((tasks))
-  (defun make-task (image-up image-down)
-    (destructuring-bind (height-down width-down &optional colors-down)
-        (array-dimensions image-down)
-      (let ((cur-task (list (cons image-up image-down))))
-        (do ((y-point 0 (incf y-point)))
-            ((= y-point height-down))
-          (setf cur-task (cons y-point cur-task)))
-        (setf tasks (cons cur-task tasks)))))
-<<get_data>>
-<<last?>>
+  (let ((tasks))
+    (defun make-task (image-up image-down)
+      (destructuring-bind (height-down width-down &optional colors-down)
+          (array-dimensions image-down)
+        (let ((cur-task (list (cons image-up image-down))))
+          (do ((y-point 0 (incf y-point)))
+              ((= y-point height-down))
+            (setf cur-task (cons y-point cur-task)))
+          (setf tasks (cons cur-task tasks)))))
+    <<get_data>>
+    <<last?>>
 #+END_SRC
 
 А теперь все это соберем.
+
 Функция принимает в качестве параметра кол-во ядер на вашем компьютере.
 Возвращает список, в котором каждый подсписок представляет собой лучший результат
 анализа для двух картинок:
+
 (((черные точки . белые точки) . y-point) (image-up . image -
 down)).
+
 Количество потоков = (кол-во ядер - 1)
+
 #+NAME: get_area_merge_results
 #+BEGIN_SRC lisp :noweb yes
+
+  (in-package  #:cl-autogui)
+
   <<make_tasks>>
 
   (defun get-area-merge-results (num-of-cores)
@@ -1012,6 +1076,8 @@ down))
 
 #+NAME: thread
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
+
   (setf name
         (bt:make-thread
          (lambda ()
@@ -1145,6 +1211,7 @@ get-data скринит экран, сохраняет изображения и
 
 #+NAME: last?
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
   (defun last?(lst)
     (let ((result (car lst)))
@@ -1156,6 +1223,7 @@ get-data скринит экран, сохраняет изображения и
 
 #+NAME: screen_and_waiting
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
   ;; после того, как создали все потоки и записали их имена,
   ;; скриним экран
@@ -1213,60 +1281,61 @@ get-data скринит экран, сохраняет изображения и
   <<get_area_merge_results_tests>>
 #+END_SRC
 
-Данный кусок кода смотреть не нужно. Нигде не вызывается и даже не танглится.
+Данный кусок кода смотреть не нужно. Нигде не вызывается и даже не
+танглится.
+
 #+NAME: make_roll
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
-    (let ((double-res))
-      (defun make-roll (num-of-cores)
-        (let* ((lock (bt:make-lock))
-               (thread-names)
-               (screen-cnt 0))
-          (tagbody
-           append-images
-             (if (null results)
-                 (progn
-                   (sleep 10)
-                   (if (null results)
-                       (format t "~% no results")
-                       (go append-images)))
-                 (let* ((results-from-analysis results)
-                       (cur-task (car results-from-analysis))
-                       (y-point (cdr (nth 0 cur-task)))
-                       (images (nth 1 cur-task))
-                       (image-up (car images))
-                       (image-down (cdr images))
-                       (results-append-image))
-                   (setf results nil)
-                   ;; оборачиваем полученное изоражение в список
-                   (setf results-append-image
-                         (cons (list (append-image image-up image-down y-point))
-                               results-append-image))
-                   ;; убираем отработанную пару изображений
-                   (setf results-from-analysis (cdr results-from-analysis))
-                   ;; если пары изображений еще есть
-                   (when results-from-analysis
-                     ;; повторяем все сначала
-                     (go append-images))
-                   (if (eql (length results-append-image) 1)
-                       ;; если получили 1 изображение
-                       (destructuring-bind (height width)
-                           (array-dimensions (nth 0 results-append-image))
-                         (save-png width height "~/Pictures/resuts.png"
-                                   (nth 0 results-append-image) :grayscale))
-                       ;; создаем таски из склеенных изображений
-                       (progn
-                         (do ((i 0 (incf i)))
-                             ((= i (- (length results-append-image) 1)))
-                           (make-task (nth i results-append-image)
-                                      (nth (+ i 1) results-append-image)))
-                         ;; создаем потоки для анализа тасков
-                         (do ((i 0 (incf i)))
-                             ((= i (- num-of-cores 1)))
-                           (thread-analysis))
-                         (go append-images))))))))
-      )
-
+  (let ((double-res))
+    (defun make-roll (num-of-cores)
+      (let* ((lock (bt:make-lock))
+             (thread-names)
+             (screen-cnt 0))
+        (tagbody
+         append-images
+           (if (null results)
+               (progn
+                 (sleep 10)
+                 (if (null results)
+                     (format t "~% no results")
+                     (go append-images)))
+               (let* ((results-from-analysis results)
+                      (cur-task (car results-from-analysis))
+                      (y-point (cdr (nth 0 cur-task)))
+                      (images (nth 1 cur-task))
+                      (image-up (car images))
+                      (image-down (cdr images))
+                      (results-append-image))
+                 (setf results nil)
+                 ;; оборачиваем полученное изоражение в список
+                 (setf results-append-image
+                       (cons (list (append-image image-up image-down y-point))
+                             results-append-image))
+                 ;; убираем отработанную пару изображений
+                 (setf results-from-analysis (cdr results-from-analysis))
+                 ;; если пары изображений еще есть
+                 (when results-from-analysis
+                   ;; повторяем все сначала
+                   (go append-images))
+                 (if (eql (length results-append-image) 1)
+                     ;; если получили 1 изображение
+                     (destructuring-bind (height width)
+                         (array-dimensions (nth 0 results-append-image))
+                       (save-png width height "~/Pictures/resuts.png"
+                                 (nth 0 results-append-image) :grayscale))
+                     ;; создаем таски из склеенных изображений
+                     (progn
+                       (do ((i 0 (incf i)))
+                           ((= i (- (length results-append-image) 1)))
+                         (make-task (nth i results-append-image)
+                                    (nth (+ i 1) results-append-image)))
+                       ;; создаем потоки для анализа тасков
+                       (do ((i 0 (incf i)))
+                           ((= i (- num-of-cores 1)))
+                         (thread-analysis))
+                       (go append-images)))))))))
 #+END_SRC
 
 Для полного счастья не хватает только тестов.
@@ -1276,6 +1345,7 @@ get-data скринит экран, сохраняет изображения и
 
 #+NAME: get_area_merge_results_tests
 #+BEGIN_SRC lisp :noweb yes
+  (in-package  #:cl-autogui)
 
   ;; (time
   ;; (block make-task-test
@@ -1311,44 +1381,15 @@ results = tasks
 если длина results != 1, т.е мы не получили цнлый рулон картинку
 ~go top~
 
-
-
-
-
 * Экспорт
 
 Теперь можно экспортировать некоторые функции и переметиться в созданный пакет
 
-#+NAME: cur_package
-#+BEGIN_SRC lisp :noweb yes
-
-(defpackage #:cl-autogui
-  (:use #:common-lisp #:xlib)
-  (:export #:x-position
-           #:x-size
-           #:x-position
-           #:x-move
-           #:x-mouse-down
-           #:x-mouse-up
-           #:x-click
-           #:x-dbclick
-           #:x-vscroll
-           #:x-hscroll
-           #:x-scroll
-           #:x-key-down
-           #:x-key-up
-           #:x-press
-           #:x-snapshot
-           #:x-snapsearch
-           #:x-get-color
-           #:x-find-color))
-
-(in-package  #:cl-autogui)
-#+END_SRC
-
 #+NAME: parcer
 #+BEGIN_SRC lisp :tangle parcer.lisp :noweb yes
 <<libs>>
+
+<<defparams>>
 
 <<open-browser>>
 
