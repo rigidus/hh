@@ -1213,6 +1213,62 @@ get-data скринит экран, сохраняет изображения и
   <<get_area_merge_results_tests>>
 #+END_SRC
 
+Данный кусок кода смотреть не нужно. Нигде не вызывается и даже не танглится.
+#+NAME: make_roll
+#+BEGIN_SRC lisp :noweb yes
+
+    (let ((double-res))
+      (defun make-roll (num-of-cores)
+        (let* ((lock (bt:make-lock))
+               (thread-names)
+               (screen-cnt 0))
+          (tagbody
+           append-images
+             (if (null results)
+                 (progn
+                   (sleep 10)
+                   (if (null results)
+                       (format t "~% no results")
+                       (go append-images)))
+                 (let* ((results-from-analysis results)
+                       (cur-task (car results-from-analysis))
+                       (y-point (cdr (nth 0 cur-task)))
+                       (images (nth 1 cur-task))
+                       (image-up (car images))
+                       (image-down (cdr images))
+                       (results-append-image))
+                   (setf results nil)
+                   ;; оборачиваем полученное изоражение в список
+                   (setf results-append-image
+                         (cons (list (append-image image-up image-down y-point))
+                               results-append-image))
+                   ;; убираем отработанную пару изображений
+                   (setf results-from-analysis (cdr results-from-analysis))
+                   ;; если пары изображений еще есть
+                   (when results-from-analysis
+                     ;; повторяем все сначала
+                     (go append-images))
+                   (if (eql (length results-append-image) 1)
+                       ;; если получили 1 изображение
+                       (destructuring-bind (height width)
+                           (array-dimensions (nth 0 results-append-image))
+                         (save-png width height "~/Pictures/resuts.png"
+                                   (nth 0 results-append-image) :grayscale))
+                       ;; создаем таски из склеенных изображений
+                       (progn
+                         (do ((i 0 (incf i)))
+                             ((= i (- (length results-append-image) 1)))
+                           (make-task (nth i results-append-image)
+                                      (nth (+ i 1) results-append-image)))
+                         ;; создаем потоки для анализа тасков
+                         (do ((i 0 (incf i)))
+                             ((= i (- num-of-cores 1)))
+                           (thread-analysis))
+                         (go append-images))))))))
+      )
+
+#+END_SRC
+
 Для полного счастья не хватает только тестов.
 Внимание! Пути на вашем компе могут отличаться, как и имена картинок.
 Если попытаться вернуть результаты не в локальную переменную, в поток nil
@@ -1240,25 +1296,21 @@ get-data скринит экран, сохраняет изображения и
 
 _______________________________________________________________________________
 
-2. После того, как главный поток закончил скринить, он может начать заниматься
-   склейкой, не дожидаясь, пока анализирующие потоки закончат. Безопасно ли это?
+2. Склейка
+выполняет после получения результатов для всех тасков
+получаем массив с подсписками.
 
-4. Общий скрин
-изображение 1 + изображение 2 = изображение 3
-изображение 3 + изображение 4 = изображение 5
-и т.д.
-При анализе изображений в таск надо отдавать пары (изображение 1 + изображение 2)
-(изображение 2 + изображение 3) и т.д.
+склеить картинку
+если длина results != 1, т.е мы не получили цнлый рулон картинку
+(make-tasks)
+~top~
+results = tasks
+очистить results
+(setf results analysis)
+записать полученные массивы в results
+если длина results != 1, т.е мы не получили цнлый рулон картинку
+~go top~
 
-5.
-Главный поток:                                          анализирующий:
-~top~                                                   get=area-merge-results
-2 скрина
-вызов make-task (и get-area-merge-results)
-получаем результаты
-нашли y-point в результате = 0?
-нет! go ~top~
-да! открываем следуюущую станицу выдачи
 
 
 
