@@ -501,42 +501,44 @@
       ;;         height-up width-up height-down width-down y-point)
       (assert (equal width-up width-down))
       (assert (equal colors-up colors-down))
-      (let* ((new-height (+ height-down y-point))
-             (new-dims (if (null colors-down)
-                           (list new-height width-down)
-                           (list new-height width-down colors-down)))
-             (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
-        ;; макрос для прохода по блоку точек
-        (macrolet ((cycle ((py px height width &optional &body newline)
-                           &body body)
-                     `(do ((qy ,py (incf qy)))
-                          ((= qy ,height))
-                        (do ((qx ,px (incf qx)))
-                            ((= qx ,width))
-                          ,@body)
-                        ,@newline)))
-          ;; для бинарных изображений
-          (if (null colors-down)
-              (let ((new-y y-point))
-                ;; (- height-up y-point) = высота области наложения
-                (cycle (0 0 (- height-up y-point) width-down (incf new-y))
-                       (setf (aref image-new qy qx)
-                             (logxor (aref image-up new-y qx)
-                                     (aref image-down qy qx)))))
-              ;; для full-color изображений
-              (let ((new-y y-point))
-                (cycle (0 0 (- height-up y-point) width-down (incf new-y))
-                       ;; ксорим 3 цвета
-                       (do ((rz 0 (incf rz)))
-                           ((= rz (- colors-down 1)))
-                         (setf (aref image-new qy qx rz)
-                               (logxor (aref image-up new-y qx rz)
-                                       (aref image-down qy qx rz))))
-                       ;; копируем альфа-канал
-                       (setf (aref image-new qy qx 3)
-                             (aref image-down qy qx 3))
-                       ))))
-        image-new))))
+      (if (>= y-point height-up)
+          nil
+          (let* ((new-height (+ height-down y-point))
+                 (new-dims (if (null colors-down)
+                               (list new-height width-down)
+                               (list new-height width-down colors-down)))
+                 (image-new (make-array new-dims :element-type '(unsigned-byte 8))))
+            ;; макрос для прохода по блоку точек
+            (macrolet ((cycle ((py px height width &optional &body newline)
+                               &body body)
+                         `(do ((qy ,py (incf qy)))
+                              ((= qy ,height))
+                            (do ((qx ,px (incf qx)))
+                                ((= qx ,width))
+                              ,@body)
+                            ,@newline)))
+              ;; для бинарных изображений
+              (if (null colors-down)
+                  (let ((new-y y-point))
+                    ;; (- height-up y-point) = высота области наложения
+                    (cycle (0 0 (- height-up y-point) width-down (incf new-y))
+                           (setf (aref image-new qy qx)
+                                 (logxor (aref image-up new-y qx)
+                                         (aref image-down qy qx)))))
+                  ;; для full-color изображений
+                  (let ((new-y y-point))
+                    (cycle (0 0 (- height-up y-point) width-down (incf new-y))
+                           ;; ксорим 3 цвета
+                           (do ((rz 0 (incf rz)))
+                               ((= rz (- colors-down 1)))
+                             (setf (aref image-new qy qx rz)
+                                   (logxor (aref image-up new-y qx rz)
+                                           (aref image-down qy qx rz))))
+                           ;; копируем альфа-канал
+                           (setf (aref image-new qy qx 3)
+                                 (aref image-down qy qx 3))
+                           ))))
+            image-new)))))
 
 ;; (block xor-area-test
 ;;   (time
@@ -620,52 +622,54 @@
    т.е. точку, от которой будет производиться анализ.
    Анализирует кол-во почерневших точек на изображении, возвращает cons-пару типа
    (% черных точек . y-point)"
-    (destructuring-bind (height width &optional colors)
-        (array-dimensions xored-image)
-      ;;(format t "~% y-point ~A height ~A" y-point height)
-      (let* ((intesect-height (- height y-point)) ;; высота пересечения
-             (white 0)
-             (black 0)
-             ;; общее кол-во пикселей в области наложения
-             (pix-amount (* intesect-height width)))
-        (format t "~% intersect-height ~A" intesect-height)
-        ;; высчитываем максимально допустимое количество белых пикселей
-        (setf border (* (float (/ border 100)) pix-amount))
-        ;;(format t "~% intesect-height ~A " intesect-height)
-        ;; если картинки full-color
-        (if colors
-            (do ((qy y-point (incf qy)))
-                ((= qy height))
-              ;; если кол-во нечерных пикселей больше 25%
-              (if (> white border)
-                  (progn
-                    ;; не анализируя дальше, возвращаем nil
-                    (return-from analysis))
-                  ;; в противном случае анализиуем следующий ряд пикселей
-                  (do ((qx 0 (incf qx)))
-                      ((= qx width))
-                    (when (not (and (eql (aref xored-image qy qx 0) 0)
-                                    (eql (aref xored-image qy qx 1) 0)
-                                    (eql (aref xored-image qy qx 2) 0)))
-                      (incf white)))))
-            ;; то же самое для бинарных изображений
-            (do ((qy y-point (incf qy)))
-                ((= qy height))
-              (if (> white border)
-                  (progn
-                    (return-from analysis ))
-                  (do ((qx 0 (incf qx)))
-                      ((= qx width))
-                    (when (not (eql (aref xored-image qy qx) 0))
-                      (incf white))))))
-        ;; эта часть выполнится только если все циклы выполнены успешно
-        ;; считаем кол-во черных пикселей
-        (setf black ( - pix-amount white))
-        (let ((result (cons (* (float (/ black pix-amount)) 100)
-                            (* (float (/ white pix-amount)) 100))))
-          ;;(format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
-          ;; возвращаем кол-во черных пикселей в процентном выражении
-          result))))
+  (if (null xored-image)
+      nil
+      (destructuring-bind (height width &optional colors)
+          (array-dimensions xored-image)
+        ;;(format t "~% y-point ~A height ~A" y-point height)
+        (let* ((intesect-height (- height y-point)) ;; высота пересечения
+               (white 0)
+               (black 0)
+               ;; общее кол-во пикселей в области наложения
+               (pix-amount (* intesect-height width)))
+          (format t "~% intersect-height ~A" intesect-height)
+          ;; высчитываем максимально допустимое количество белых пикселей
+          (setf border (* (float (/ border 100)) pix-amount))
+          ;;(format t "~% intesect-height ~A " intesect-height)
+          ;; если картинки full-color
+          (if colors
+              (do ((qy y-point (incf qy)))
+                  ((= qy height))
+                ;; если кол-во нечерных пикселей больше 25%
+                (if (> white border)
+                    (progn
+                      ;; не анализируя дальше, возвращаем nil
+                      (return-from analysis))
+                    ;; в противном случае анализиуем следующий ряд пикселей
+                    (do ((qx 0 (incf qx)))
+                        ((= qx width))
+                      (when (not (and (eql (aref xored-image qy qx 0) 0)
+                                      (eql (aref xored-image qy qx 1) 0)
+                                      (eql (aref xored-image qy qx 2) 0)))
+                        (incf white)))))
+              ;; то же самое для бинарных изображений
+              (do ((qy y-point (incf qy)))
+                  ((= qy height))
+                (if (> white border)
+                    (progn
+                      (return-from analysis ))
+                    (do ((qx 0 (incf qx)))
+                        ((= qx width))
+                      (when (not (eql (aref xored-image qy qx) 0))
+                        (incf white))))))
+          ;; эта часть выполнится только если все циклы выполнены успешно
+          ;; считаем кол-во черных пикселей
+          (setf black ( - pix-amount white))
+          (let ((result (cons (* (float (/ black pix-amount)) 100)
+                              (* (float (/ white pix-amount)) 100))))
+            ;;(format t " ~% black ~A y-point ~A pixamount ~A" black y-point pix-amount)
+            ;; возвращаем кол-во черных пикселей в процентном выражении
+            result)))))
 
 ;; (block analysis-test
 ;;   (let* ((arr1 (binarization (load-png "~/Pictures/test-bin.png") 200))
@@ -764,67 +768,69 @@
                                     ;;         (car cur-task) name image-up image-down)
 
                                     ;; начинаем анализ
-                                    (do ((i (- (length y-points) 1) (- i 1)))
-                                        ((< i 0))
-                                      ;; получаем текущий y-point
-                                      (let ((y-point (car y-points)))
-                                        ;; убираем его из списка y-point-ов
-                                        (setf y-points (cdr y-points))
-                                        ;; если это первая итерация цикла и нет данных
-                                        ;; и никаких результатов еще нет
-                                        (if (null cur-results)
-                                            ;; анализируем изображение с текущим y-point
-                                            ;; и допустимым кол-вом белых точек по умолчанию
-                                            (let ((amount (analysis
-                                                           (xor-area image-up
-                                                                     image-down y-point)
-                                                           y-point)))
-                                              ;; (format out "~% --- before
-                                              ;;                    ~% y-point ~A ~% name ~A
-                                              ;;                    ~% amount ~A"
-                                              ;;         y-point name amount)
-                                              ;; если какой-то результат получен,
-                                              (if amount
-                                                  (progn
-                                                    ;; (format out "~% ----
-                                                    ;;            ~% y-point ~A ~% name ~A
-                                                    ;;             ~% amount ~A
-                                                    ;;              %---"
-                                                    ;;         y-point name amount)
-                                                    (setf cur-results (cons
-                                                                       (cons amount y-point)
-                                                                       cur-results)))))
-                                            ;; если результаты были, получаем новый
-                                            ;; порог белых точек
-                                            (let* ((last-result (car cur-results))
-                                                   (white (cdr (car last-result)))
-                                                   ;; вызываем анализ с этим порогом
-                                                 (amount (analysis
-                                                          (xor-area image-up
-                                                                    image-down
-                                                                    y-point)
-                                                          y-point white)))
-                                              ;; (format out "% white ~A" white)
-                                              ;; (format out "~% --- before
-                                              ;;                    ~% y-point ~A ~% name ~A
-                                              ;;                    ~% amount ~A
-                                              ;;                     %---"
-                                              ;;         y-point name amount)
+                                    (destructuring-bind (height-up width-up)
+                                        (array-dimensions image-up)
+                                      (do ((i (- height-up 1) (- i 1)))
+                                          ((< i 0))
+                                        ;; получаем текущий y-point
+                                        (let ((y-point (car y-points)))
+                                          ;; убираем его из списка y-point-ов
+                                          (setf y-points (cdr y-points))
+                                          ;; если это первая итерация цикла и нет данных
+                                          ;; и никаких результатов еще нет
+                                          (if (null cur-results)
+                                              ;; анализируем изображение с текущим y-point
+                                              ;; и допустимым кол-вом белых точек по умолчанию
+                                              (let ((amount (analysis
+                                                             (xor-area image-up
+                                                                       image-down y-point)
+                                                             y-point)))
+                                                ;; (format out "~% --- before
+                                                ;;                    ~% y-point ~A ~% name ~A
+                                                ;;                    ~% amount ~A"
+                                                ;;         y-point name amount)
+                                                ;; если какой-то результат получен,
+                                                (if amount
+                                                    (progn
+                                                      ;; (format out "~% ----
+                                                      ;;            ~% y-point ~A ~% name ~A
+                                                      ;;             ~% amount ~A
+                                                      ;;              %---"
+                                                      ;;         y-point name amount)
+                                                      (setf cur-results (cons
+                                                                         (cons amount y-point)
+                                                                         cur-results)))))
+                                              ;; если результаты были, получаем новый
+                                              ;; порог белых точек
+                                              (let* ((last-result (car cur-results))
+                                                     (white (cdr (car last-result)))
+                                                     ;; вызываем анализ с этим порогом
+                                                     (amount (analysis
+                                                              (xor-area image-up
+                                                                        image-down
+                                                                        y-point)
+                                                              y-point white)))
+                                                ;; (format out "% white ~A" white)
+                                                ;; (format out "~% --- before
+                                                ;;                    ~% y-point ~A ~% name ~A
+                                                ;;                    ~% amount ~A
+                                                ;;                     %---"
+                                                ;;         y-point name amount)
 
-                                              ;; если какой-то результат получен,
-                                              (if amount
-                                                  ;; записываем в в текущий пулл результатов
-                                                  ;; (format out "~% amount ~A" amount)
-                                                  (progn
-                                                    ;; (format out "~% ---
-                                                    ;;            ~% y-point ~A ~% name ~A
-                                                    ;;            ~% amount ~A"
-                                                    ;;         y-point name amount)
-                                                    (setf cur-results (cons
-                                                                       (cons amount
-                                                                             y-point)
-                                                                       cur-results))
-                                                    ))))))
+                                                ;; если какой-то результат получен,
+                                                (if amount
+                                                    ;; записываем в в текущий пулл результатов
+                                                    ;; (format out "~% amount ~A" amount)
+                                                    (progn
+                                                      ;; (format out "~% ---
+                                                      ;;            ~% y-point ~A ~% name ~A
+                                                      ;;            ~% amount ~A"
+                                                      ;;         y-point name amount)
+                                                      (setf cur-results (cons
+                                                                         (cons amount
+                                                                               y-point)
+                                                                         cur-results))
+                                                      )))))))
                                     ;; сортируем результаты
                                     ;; по количеству черных точек
                                     ;; от самого выского результата до самого низкого
@@ -946,9 +952,7 @@
                                                (array-dimensions (task-image-down fuck))
                                              (destructuring-bind (height-up width-up)
                                                  (array-dimensions (task-image-up fuck))
-                                               (format t "~% height-down ~A
-                                                             width-down ~A
-                                                             height-up ~A width-up ~A"
+                                               (format t "~% task height-down ~A width-down ~A height-up ~A width-up ~A"
                                                        height-down width-down
                                                        height-up width-up))))
                                          )
@@ -974,14 +978,12 @@
                                            (( = i (fill-pointer tasks)))
                                          (let ((fuck (aref tasks i)))
                                            (format t "~% last y-point ~A"
-                                                   (last (task-y-points fuck)))
+                                                   (nth 0 (task-y-points fuck)))
                                            (destructuring-bind (height-down width-down)
                                                (array-dimensions (task-image-down fuck))
                                              (destructuring-bind (height-up width-up)
                                                  (array-dimensions (task-image-up fuck))
-                                               (format t "~% height-down ~A
-                                                             width-down ~A
-                                                             height-up ~A width-up ~A"
+                                               (format t "~% task height-down ~A width-down ~A height-up ~A width-up ~A"
                                                        height-down width-down
                                                        height-up width-up))))
                                          )
