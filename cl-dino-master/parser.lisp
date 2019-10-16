@@ -1291,10 +1291,10 @@
        get-data
          ;;скриним и составляем таски
          (get-data (format nil
-                           "/home/sonja/Pictures/screen~A.png"
+                           "~~/Pictures/screen~A.png"
                            screen-cnt)
                    (format nil
-                           "/home/sonja/Pictures/screen~A.png"
+                           "~~/Pictures/screen~A.png"
                            (incf screen-cnt)))
          ;; (sleep 4)
          ;; (when (< screen-cnt 12)
