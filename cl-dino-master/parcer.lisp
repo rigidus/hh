@@ -1386,10 +1386,10 @@
            get-data
              ;;скриним и составляем таски
              (get-data (format nil
-                               "~~Pictures/screen~A.png"
+                               "/home/sonja/Pictures/screen~A.png"
                                screen-cnt)
                        (format nil
-                               "~~/Pictures/screen~A.png"
+                               "/home/sonja/Pictures/screen~A.png"
                                (incf screen-cnt)))
 
              (sleep 8)
@@ -1514,11 +1514,11 @@
                    ))))))
     ))
 
-;; (time
-;;  (block real-online-test
-;;    (open-browser "/usr/bin/firefox" "https://spb.hh.ru/")
-;;    (sleep 8)
-;;    (let ((res (get-area-merge-results 4))))))
+(time
+ (block real-online-test
+   (open-browser "/usr/bin/firefox" "https://spb.hh.ru/")
+   (sleep 8)
+   (let ((res (get-area-merge-results 4))))))
 
 ;; (time
 ;;  (block ofline-demo-test
