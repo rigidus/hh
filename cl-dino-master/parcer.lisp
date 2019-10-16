@@ -298,13 +298,13 @@
 ;; (defun x-move (x y)
 ;;   (if (and (integerp x) (integerp y))
 ;;       (with-default-display-force (d)
-;;         (xlib/xtest:fake-motion-event d x y))
+;;         (xlib/xlib/xtest:fake-motion-event d x y))
 ;;       (error "Integer only for position, (x: ~S, y: ~S)" x y)))
 
 (defun x-move (x y)
   (if (and (integerp x) (integerp y))
       (with-default-display-force (d)
-        (xtest:fake-motion-event d x y))
+        (xlib/xtest:fake-motion-event d x y))
       (error "Integer only for position, (x: ~S, y: ~S)" x y)))
 
 (defun mklist (obj)
@@ -364,20 +364,20 @@
 ;; (defun perform-mouse-action (press? button &key x y)
 ;;   (and x y (x-move x y))
 ;;   (with-default-display-force (d)
-;;     (xlib/xtest:fake-button-event d button press?)))
+;;     (xlib/xlib/xtest:fake-button-event d button press?)))
 
 (defun perform-mouse-action (press? button &key x y)
   (and x y (x-move x y))
   (with-default-display-force (d)
-    (xtest:fake-button-event d button press?)))
+    (xlib/xtest:fake-button-event d button press?)))
 
 ;; (defun perform-key-action (press? keycode) ; use xev to get keycode
 ;;   (with-default-display-force (d)
-;;     (xlib/xtest:fake-key-event d keycode press?)))
+;;     (xlib/xlib/xtest:fake-key-event d keycode press?)))
 
 (defun perform-key-action (press? keycode) ; use xev to get keycode
   (with-default-display-force (d)
-    (xtest:fake-key-event d keycode press?)))
+    (xlib/xtest:fake-key-event d keycode press?)))
 
 ;; (block perform-key-action-test
 ;;   (perform-key-action t 116)
@@ -1386,10 +1386,10 @@
            get-data
              ;;скриним и составляем таски
              (get-data (format nil
-                               "/home/sonja/Pictures/screen~A.png"
+                               "~~/Pictures/screen~A.png"
                                screen-cnt)
                        (format nil
-                               "/home/sonja/Pictures/screen~A.png"
+                               "~~/Pictures/screen~A.png"
                                (incf screen-cnt)))
 
              (sleep 8)
@@ -1514,14 +1514,12 @@
                    ))))))
     ))
 
-(time
- (block real-online-test
-   (open-browser "/usr/bin/firefox" "https://spb.hh.ru/")
-   (sleep 8)
-   (let ((res (get-area-merge-results 4))))))
+;; (time
+;;  (block real-online-test
+;;    (open-browser "/usr/bin/firefox" "https://spb.hh.ru/")
+;;    (sleep 8)
+;;    (let ((res (get-area-merge-results 4))))))
 
 ;; (time
 ;;  (block ofline-demo-test
 ;;    (demo-get-area-merge-results)))
-
-  (in-package  #:cl-autogui)
